@@ -1,0 +1,16 @@
+algo: 'PPO' # Algorithm to use: A2C, PPO, or ACKTR
+loss:
+  clip_ratio: 0.2 # Parameter for clipping in the policy objective 
+  entropy_coef: 0.01 # Entropy term coefficient
+  value_coef: 1.0 # Value loss coefficient
+model:
+  recurrent: True # Whether to use a recurrent policy
+  hidden_size: 512 # Hidden size of all dense hidden layers
+optimizer:
+  eps: 1e-7 # Adam optimizer epsilon
+  lr: 3e-4 # Learning rate
+  max_grad_norm: 0.5 # Max norm of gradients
+training:
+  max_epochs: 40 # Maximum numbers of PPO training iterations
+  mini_batch_size: 512 # PPO update mini-batch size (the larger the better?)
+  target_kl: 0.01 # Stop PPO epoch if KL divergence between old and new policies exceeds this value.

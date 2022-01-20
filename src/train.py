@@ -1,0 +1,190 @@
+import os
+import os.path as osp
+import time
+
+import hydra
+import torch
+from omegaconf import OmegaConf
+
+from algos.ppo import PPO
+from envs import make_vec_env
+from models.actor_critic import ActorCritic
+from utils.logx import EpochLogger
+from utils.storage import RolloutStorage
+
+
+def test_agent(actor_critic, env, num_test_episodes, device):
+    episode_returns = []
+    obs = env.reset()
+    recurrent_hidden_states = torch.zeros(
+        env.num_envs, actor_critic.recurrent_hidden_state_size, device=device)
+    masks = torch.zeros(env.num_envs, 1, device=device)
+
+    while len(episode_returns) < num_test_episodes:
+        with torch.no_grad():
+            _, action, _, recurrent_hidden_states = actor_critic.act(
+                obs,
+                recurrent_hidden_states,
+                masks,
+                deterministic=True)
+
+        # Observe reward and next obs
+        obs, _, done, infos = env.step(action)
+
+        masks = torch.tensor(
+            [[0.0] if done_ else [1.0] for done_ in done],
+            dtype=torch.float32,
+            device=device)
+
+        for info in infos:
+            if 'episode' in info.keys():
+                episode_returns.append(info['episode']['r'])
+
+    return episode_returns
+
+@hydra.main(config_path='spec', config_name='config')
+def main(cfg):
+    print(OmegaConf.to_yaml(cfg))
+
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
+
+    torch.set_num_threads(1)
+    device = torch.device('cuda:0' if cfg.training.cuda else 'cpu')
+
+    env = make_vec_env(cfg.env,
+                       cfg.training.num_processes,
+                       device=device)
+    env.seed(cfg.seed)
+
+    actor_critic = ActorCritic(env.observation_space.shape,
+                               env.action_space,
+                               base_kwargs={
+                                   'recurrent': cfg.agent.model.recurrent,
+                                   'hidden_size': cfg.agent.model.hidden_size})
+    actor_critic.to(device)
+
+    assert cfg.agent.algo.lower() == 'ppo', 'Only the PPO agent is supported'
+    agent = PPO(
+        actor_critic,
+        cfg.agent.loss.clip_ratio,
+        cfg.agent.loss.value_coef,
+        cfg.agent.loss.entropy_coef,
+        cfg.agent.training.max_epochs,
+        cfg.agent.training.mini_batch_size,
+        cfg.agent.training.target_kl,
+        lr=cfg.agent.optimizer.lr,
+        eps=cfg.agent.optimizer.eps,
+        max_grad_norm=cfg.agent.optimizer.max_grad_norm)
+
+    rollouts = RolloutStorage(cfg.training.num_steps,
+                              cfg.training.num_processes,
+                              env.observation_space.shape,
+                              env.action_space,
+                              actor_critic.recurrent_hidden_state_size)
+    obs = env.reset()
+    rollouts.obs[0].copy_(obs)
+    rollouts.to(device)
+
+    logger = EpochLogger()
+
+    num_updates = int(cfg.training.total_steps //
+                      cfg.training.num_steps //
+                      cfg.training.num_processes)
+    iter_time = time.time()
+    for updt in range(num_updates):
+        for step in range(cfg.training.num_steps):
+            # Sample actions
+            with torch.no_grad():
+                value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
+                    rollouts.obs[step], rollouts.recurrent_hidden_states[step],
+                    rollouts.masks[step])
+
+            # Observe reward and next obs
+            obs, reward, done, infos = env.step(action)
+
+            for info in infos:
+                if 'episode' in info.keys():
+                    logger.store(RolloutReturn=info['episode']['r'],
+                                 RolloutLength=info['episode']['l'])
+
+            # If done then clean the history of observations.
+            masks = torch.FloatTensor(
+                [[0.0] if done_ else [1.0] for done_ in done])
+            bad_masks = torch.FloatTensor(
+                [[0.0] if 'bad_transition' in info.keys() else [1.0]
+                 for info in infos])
+            rollouts.insert(obs, recurrent_hidden_states, action,
+                            action_log_prob, value, reward, masks, bad_masks)
+
+        with torch.no_grad():
+            next_value = actor_critic.get_value(
+                rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
+                rollouts.masks[-1]).detach()
+
+        rollouts.compute_returns(next_value,
+                                 cfg.rollout.gae_lam is not None,
+                                 cfg.rollout.gamma,
+                                 cfg.rollout.gae_lam)
+
+        value_loss, policy_loss, dist_entropy, approx_kl, update_info = \
+            agent.update(rollouts)
+        logger.store(LossValue=value_loss,
+                     LossPolicy=policy_loss,
+                     DistEntropy=dist_entropy,
+                     ApproxKL=approx_kl,
+                     **update_info)
+
+        rollouts.after_update()
+
+        if (updt + 1) % cfg.logging.save_interval == 0 or updt == num_updates - 1:
+            ckpt_dir = './checkpoints'
+            weights_dir = osp.join(ckpt_dir, 'weights')
+            os.makedirs(ckpt_dir, exist_ok=True)
+            os.makedirs(weights_dir, exist_ok=True)
+            torch.save([
+                actor_critic,
+                agent.optimizer.state_dict(),
+            ], osp.join(ckpt_dir, 'model.pkl'))
+            torch.save(actor_critic.state_dict(),
+                osp.join(weights_dir, f'{updt + 1}.pt'))
+
+        if (updt + 1) % cfg.logging.log_interval == 0 or updt == num_updates - 1:
+            test_ep_returns = test_agent(actor_critic,
+                                         env,
+                                         cfg.training.num_test_episodes,
+                                         device)
+            for test_return in test_ep_returns:
+                logger.store(TestReturn=test_return)
+
+            total_num_steps = ((updt + 1) *
+                               cfg.training.num_processes *
+                               cfg.training.num_steps)
+            last_num_steps =  (cfg.logging.log_interval *
+                               cfg.training.num_processes *
+                               cfg.training.num_steps)
+
+            logger.log_tabular('RolloutReturn', with_min_and_max=True)
+            logger.log_tabular('RolloutLength', with_min_and_max=True)
+            logger.log_tabular('RolloutNumber',
+                               len(logger.histogram_dict['RolloutReturn/Hist']))
+            logger.log_tabular('TestReturn', with_min_and_max=True)
+            logger.log_tabular('LossValue')
+            logger.log_tabular('LossPolicy')
+            logger.log_tabular('DistEntropy', with_min_and_max=True)
+            logger.log_tabular('ApproxKL', with_min_and_max=True)
+            for key in update_info.keys():
+                logger.log_tabular(key, average_only=True)
+            logger.log_tabular('TotalEnvInteracts', total_num_steps)
+            logger.log_tabular('StepsPerSecond',
+                               last_num_steps / (time.time() - iter_time))
+            logger.log_tabular('ETA [mins]', ((time.time() - iter_time)
+                                              / cfg.logging.log_interval
+                                              * (num_updates - updt - 1)
+                                              // 60))
+            logger.dump_tabular(updt + 1)
+
+            iter_time = time.time()
+
+if __name__ == "__main__":
+    main()

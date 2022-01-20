@@ -1,0 +1,29 @@
+defaults:
+  - agent: ppo
+  - _self_
+hydra:
+  run:
+    dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${now:T%H-%M-%S}
+  sweep:
+    dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}
+    subdir: mr${hydra.job.override_dirname}/s${seed}
+  job:
+    config:
+      override_dirname:
+        exclude_keys:
+          - seed
+
+env: 'MiniWorld-PickupObjs-v0'
+logging:
+  log_interval: 10 # Log every N updates (update = data collection + training)
+  save_interval: 100 # Save every N updates
+rollout:
+  gamma: 0.999 # Rewards discount factor
+  gae_lam: 0.97 # Generalized Advantage Estimation (GAE) lambda parameter, None disables GAE
+seed: 42
+training:
+  cuda: True
+  num_processes: 16 # How many training CPU processes to use
+  num_steps: 128 # Number of environment interactions of each process in epoch
+  num_test_episodes: 20 # Number of episodes with the deterministic policy
+  total_steps: 1e6 # Total environment interactions throughout training
