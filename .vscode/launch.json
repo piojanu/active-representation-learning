@@ -1,0 +1,42 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: SimCLR",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/etc/simclr/main.py",
+            "cwd": "${workspaceFolder}/etc/simclr/",
+            "console": "integratedTerminal",
+            "args": [
+                "--network=efficientnet_b0",
+                "--pretrain=True",
+                "--dataset=STL10",
+                "--dataset_dir=/scratch/local/ssd/piojanu"
+            ]
+        },
+        {
+            "name": "Python: MiniWorld",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/etc/pytorch-a2c-ppo-acktr-gail/main.py",
+            "cwd": "${workspaceFolder}/etc/pytorch-a2c-ppo-acktr-gail/",
+            "console": "integratedTerminal",
+            "args": [
+                "--algo=ppo",
+                "--num-processes=1",
+                "--env-name=MiniWorld-Hallway-v0"
+            ]
+        }
+    ]
+}
