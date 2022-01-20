@@ -6,7 +6,7 @@ hydra:
     dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${now:T%H-%M-%S}
   sweep:
     dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}
-    subdir: mr${hydra.job.override_dirname}/s${seed}
+    subdir: mr:${hydra.job.override_dirname}/s${seed}
   job:
     config:
       override_dirname:
