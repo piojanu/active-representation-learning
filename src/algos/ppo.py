@@ -49,16 +49,23 @@ class PPO():
             for sample in data_generator:
                 (obs_batch, recurrent_hidden_states_batch, actions_batch,
                  old_value_pred_batch, return_batch, masks_batch,
-                 old_action_log_probs_batch, adv_targ) = sample
+                 old_log_probs_batch, adv_targ) = sample
 
-                # Reshape to do in a single forward pass for all steps
-                values, action_log_probs, dist_entropy, approx_kl, _ = \
+                values, log_probs, dist_entropy, _ = \
                     self.actor_critic.evaluate_actions(
                         obs_batch, recurrent_hidden_states_batch, masks_batch,
-                        actions_batch, old_action_log_probs_batch)
+                        actions_batch, old_log_probs_batch)
 
-                ratio = torch.exp(action_log_probs -
-                                  old_action_log_probs_batch)
+                # Calculate approximate form of reverse KL Divergence for early stopping
+                # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
+                # and discussion in PR #419: https://github.com/DLR-RM/stable-baselines3/pull/419
+                # and Schulman blog: http://joschu.net/blog/kl-approx.html
+                with torch.no_grad():
+                    log_ratio = log_probs - old_log_probs_batch
+                    approx_kl = torch.mean(
+                        (torch.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+
+                ratio = torch.exp(log_probs - old_log_probs_batch)
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_ratio_pi,
                                     1.0 + self.clip_ratio_pi) * adv_targ
@@ -90,10 +97,9 @@ class PPO():
                 approx_kl_epoch += approx_kl.item()
                 num_updates += 1
             
-            approx_kl = approx_kl_epoch / num_updates
-            if approx_kl > self.max_kl:
+            if approx_kl_epoch / num_updates > self.max_kl:
                 break
-
+            
         value_loss_epoch /= num_updates
         policy_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates

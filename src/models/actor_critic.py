@@ -65,9 +65,8 @@ class ActorCritic(nn.Module):
 
         action_log_probs = dist.log_probs(action)
         dist_entropy = dist.entropy().mean()
-        approx_kl = (old_log_probs - action_log_probs).mean()
 
-        return value, action_log_probs, dist_entropy, approx_kl, rnn_hxs
+        return value, action_log_probs, dist_entropy, rnn_hxs
 
 
 class NNBase(nn.Module):
