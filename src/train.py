@@ -18,21 +18,21 @@ def test_agent(actor_critic, env, num_test_episodes, device):
     obs = env.reset()
     recurrent_hidden_states = torch.zeros(
         env.num_envs, actor_critic.recurrent_hidden_state_size, device=device)
-    masks = torch.zeros(env.num_envs, 1, device=device)
+    non_terminal_masks = torch.zeros(env.num_envs, 1, device=device)
 
     while len(episode_returns) < num_test_episodes:
         with torch.no_grad():
             _, action, _, recurrent_hidden_states = actor_critic.act(
                 obs,
                 recurrent_hidden_states,
-                masks,
+                non_terminal_masks,
                 deterministic=True)
 
         # Observe reward and next obs
         obs, _, done, infos = env.step(action)
 
-        masks = torch.tensor(
-            [[0.0] if done_ else [1.0] for done_ in done],
+        non_terminal_masks = torch.tensor(
+            [[1.0] if not done_ else [0.0] for done_ in done],
             dtype=torch.float32,
             device=device)
 
@@ -96,7 +96,7 @@ def main(cfg):
             with torch.no_grad():
                 value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
                     rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                    rollouts.masks[step])
+                    rollouts.non_terminal_masks[step])
 
             # Observe reward and next obs
             obs, reward, done, infos = env.step(action)
@@ -107,20 +107,21 @@ def main(cfg):
                                  RolloutLength=info['episode']['l'])
 
             # If done then clean the history of observations.
-            masks = torch.FloatTensor(
-                [[0.0] if done_ else [1.0] for done_ in done])
+            non_terminal_masks = torch.FloatTensor(
+                [[1.0] if not done_ else [0.0] for done_ in done])
             bad_masks = torch.FloatTensor(
-                [[0.0] if 'bad_transition' in info.keys() else [1.0]
+                [[1.0] if 'bad_transition' in info.keys() else [0.0]
                  for info in infos])
             rollouts.insert(obs, recurrent_hidden_states, action,
-                            action_log_prob, value, reward, masks, bad_masks)
+                            action_log_prob, value, reward, non_terminal_masks,
+                            bad_masks)
 
         with torch.no_grad():
-            next_value = actor_critic.get_value(
+            last_value = actor_critic.get_value(
                 rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
-                rollouts.masks[-1]).detach()
+                rollouts.non_terminal_masks[-1]).detach()
 
-        rollouts.compute_returns(next_value,
+        rollouts.compute_returns(last_value,
                                  cfg.rollout.gae_lambda,
                                  cfg.rollout.gamma,
                                  cfg.rollout.bootstrap_value_at_time_limit)

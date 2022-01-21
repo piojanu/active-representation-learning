@@ -14,7 +14,7 @@ class RolloutStorage(object):
             num_steps + 1, num_processes, recurrent_hidden_state_size)
         self.rewards = torch.zeros(num_steps, num_processes, 1)
         self.value_preds = torch.zeros(num_steps + 1, num_processes, 1)
-        self.returns = torch.zeros(num_steps + 1, num_processes, 1)
+        self.returns = torch.zeros(num_steps, num_processes, 1)
         self.advantages = torch.zeros(num_steps, num_processes, 1)
         self.action_log_probs = torch.zeros(num_steps, num_processes, 1)
         if action_space.__class__.__name__ == 'Discrete':
@@ -24,10 +24,9 @@ class RolloutStorage(object):
         self.actions = torch.zeros(num_steps, num_processes, action_shape)
         if action_space.__class__.__name__ == 'Discrete':
             self.actions = self.actions.long()
-        self.masks = torch.ones(num_steps + 1, num_processes, 1)
-
-        # Masks that indicate whether it's a true terminal state
-        # or time limit end state
+        self.non_terminal_masks = torch.ones(num_steps + 1, num_processes, 1)
+        # Masks that indicate whether it's a time limit end state (1.0) or
+        # a true terminal state (0.0).
         self.bad_masks = torch.ones(num_steps + 1, num_processes, 1)
 
         self.num_steps = num_steps
@@ -42,19 +41,18 @@ class RolloutStorage(object):
         self.advantages = self.advantages.to(device)
         self.action_log_probs = self.action_log_probs.to(device)
         self.actions = self.actions.to(device)
-        self.masks = self.masks.to(device)
+        self.non_terminal_masks = self.non_terminal_masks.to(device)
         self.bad_masks = self.bad_masks.to(device)
 
     def insert(self, obs, recurrent_hidden_states, actions, action_log_probs,
-               value_preds, rewards, masks, bad_masks):
+               value_preds, rewards, non_terminal_masks, bad_masks):
         self.obs[self.step + 1].copy_(obs)
-        self.recurrent_hidden_states[self.step +
-                                     1].copy_(recurrent_hidden_states)
+        self.recurrent_hidden_states[self.step+1].copy_(recurrent_hidden_states)
         self.actions[self.step].copy_(actions)
         self.action_log_probs[self.step].copy_(action_log_probs)
         self.value_preds[self.step].copy_(value_preds)
         self.rewards[self.step].copy_(rewards)
-        self.masks[self.step + 1].copy_(masks)
+        self.non_terminal_masks[self.step + 1].copy_(non_terminal_masks)
         self.bad_masks[self.step + 1].copy_(bad_masks)
 
         self.step = (self.step + 1) % self.num_steps
@@ -62,41 +60,38 @@ class RolloutStorage(object):
     def after_update(self):
         self.obs[0].copy_(self.obs[-1])
         self.recurrent_hidden_states[0].copy_(self.recurrent_hidden_states[-1])
-        self.masks[0].copy_(self.masks[-1])
+        self.non_terminal_masks[0].copy_(self.non_terminal_masks[-1])
         self.bad_masks[0].copy_(self.bad_masks[-1])
 
     def compute_returns(self,
-                        next_value,
+                        last_value,
                         gae_lambda,
                         gamma,
                         bootstrap_value_at_time_limit):
-        # Calculate returns
-        self.returns[-1] = next_value
-        for step in reversed(range(self.rewards.size(0))):
-            self.returns[step] = (
-                self.rewards[step]
-                + self.returns[step+1] * gamma * self.masks[step+1])                
-            if bootstrap_value_at_time_limit:
-                self.returns[step] = (
-                    self.returns[step] * self.bad_masks[step+1]
-                    + (1 - self.bad_masks[step+1]) * self.value_preds[step])
+        '''Compute the lambda-return (TD(lambda) estimate) and GAE advantage.
+
+        The TD(lambda) estimator has also two special cases:
+            - TD(1) is Monte-Carlo estimate (sum of discounted rewards)
+            - TD(0) is one-step estimate with bootstrapping (r_t + gamma * v(s_{t+1}))
         
-        # Calculate advantages
-        if gae_lambda is not None:
-            self.value_preds[-1] = next_value
-            gae = 0
-            for step in reversed(range(self.rewards.size(0))):
-                delta = (
-                    self.rewards[step]
-                    + gamma * self.value_preds[step+1] * self.masks[step+1]
-                    - self.value_preds[step])
-                gae = (
-                    delta + gamma * gae_lambda * self.masks[step+1] * gae)
-                if bootstrap_value_at_time_limit:
-                    gae = gae * self.bad_masks[step+1]
-                self.advantages[step] = gae
-        else:
-            self.advantages = self.returns[:-1] - self.value_preds[:-1]
+        For more information, see discussion in https://github.com/DLR-RM/stable-baselines3/pull/375
+        '''
+        self.value_preds[-1] = last_value
+
+        if bootstrap_value_at_time_limit:
+            self.rewards += self.bad_masks[1:] * self.value_preds[1:]
+
+        deltas = (self.rewards
+                  + gamma * self.value_preds[1:] * self.non_terminal_masks[1:]
+                  - self.value_preds[:-1])
+
+        gae = 0
+        for step in reversed(range(self.rewards.size(0))):
+            gae = (deltas[step]
+                   + gamma * gae_lambda * self.non_terminal_masks[step+1] * gae)
+            self.advantages[step] = gae
+
+        self.returns[:] = self.advantages[:] + self.value_preds[:-1]
 
         # Centre and normalize the advantages to lower the variance of
         # the policy gradient estimator.
@@ -120,8 +115,8 @@ class RolloutStorage(object):
             actions_batch = self.actions.view(
                 -1, self.actions.size(-1))[indices]
             value_preds_batch = self.value_preds[:-1].view(-1, 1)[indices]
-            return_batch = self.returns[:-1].view(-1, 1)[indices]
-            masks_batch = self.masks[:-1].view(-1, 1)[indices]
+            return_batch = self.returns.view(-1, 1)[indices]
+            masks_batch = self.non_terminal_masks[:-1].view(-1, 1)[indices]
             old_action_log_probs_batch = \
                 self.action_log_probs.view(-1, 1)[indices]
             adv_targ = self.advantages.view(-1, 1)[indices]
@@ -155,8 +150,8 @@ class RolloutStorage(object):
                     self.recurrent_hidden_states[0:1, ind])
                 actions_batch.append(self.actions[:, ind])
                 value_preds_batch.append(self.value_preds[:-1, ind])
-                return_batch.append(self.returns[:-1, ind])
-                masks_batch.append(self.masks[:-1, ind])
+                return_batch.append(self.returns[:, ind])
+                masks_batch.append(self.non_terminal_masks[:-1, ind])
                 old_action_log_probs_batch.append(
                     self.action_log_probs[:, ind])
                 adv_targ.append(self.advantages[:, ind])
