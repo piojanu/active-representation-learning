@@ -15,15 +15,16 @@ hydra:
 
 env: 'MiniWorld-PickupObjs-v0'
 logging:
-  log_interval: 10 # Log every N updates (update = data collection + training)
-  save_interval: 100 # Save every N updates
+  log_interval: 10 # Log every N policy iterations
+  save_interval: 100 # Save every N policy iterations
 rollout:
-  gamma: 0.999 # Rewards discount factor
-  gae_lam: 0.97 # Generalized Advantage Estimation (GAE) lambda parameter, None disables GAE
+  bootstrap_value_at_time_limit: False
+  gae_lambda: 0.95 # Generalized Advantage Estimation (GAE) lambda parameter (null to disable)
+  gamma: 0.99 # Rewards discount factor
 seed: 42
 training:
   cuda: True
-  num_processes: 16 # How many training CPU processes to use
-  num_steps: 128 # Number of environment interactions of each process in epoch
+  num_processes: 16 # How many CPU processes to use for data collection
+  num_steps: 2048 # Number of environment interactions before policy improvement
   num_test_episodes: 20 # Number of episodes with the deterministic policy
   total_steps: 1e6 # Total environment interactions throughout training

@@ -48,8 +48,8 @@ def main(cfg):
 
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed_all(cfg.seed)
-
     torch.set_num_threads(1)
+
     device = torch.device('cuda:0' if cfg.training.cuda else 'cpu')
 
     env = make_vec_env(cfg.env,
@@ -59,25 +59,24 @@ def main(cfg):
 
     actor_critic = ActorCritic(env.observation_space.shape,
                                env.action_space,
-                               base_kwargs={
-                                   'recurrent': cfg.agent.model.recurrent,
-                                   'hidden_size': cfg.agent.model.hidden_size})
+                               hidden_size=cfg.agent.model.hidden_size,
+                               recurrent=cfg.agent.model.recurrent)
     actor_critic.to(device)
 
     assert cfg.agent.algo.lower() == 'ppo', 'Only the PPO agent is supported'
-    agent = PPO(
-        actor_critic,
-        cfg.agent.loss.clip_ratio,
-        cfg.agent.loss.value_coef,
-        cfg.agent.loss.entropy_coef,
-        cfg.agent.training.max_epochs,
-        cfg.agent.training.mini_batch_size,
-        cfg.agent.training.target_kl,
-        lr=cfg.agent.optimizer.lr,
-        eps=cfg.agent.optimizer.eps,
-        max_grad_norm=cfg.agent.optimizer.max_grad_norm)
+    agent = PPO(actor_critic,
+                cfg.agent.loss.clip_ratio_pi,
+                cfg.agent.loss.clip_ratio_vf,
+                cfg.agent.loss.entropy_coef,
+                cfg.agent.loss.value_coef,
+                cfg.agent.training.learning_rate,
+                cfg.agent.training.num_epochs,
+                cfg.agent.training.max_grad_norm,
+                cfg.agent.training.max_kl,
+                cfg.agent.training.mini_batch_size)
 
-    rollouts = RolloutStorage(cfg.training.num_steps,
+    local_num_steps = cfg.training.num_steps // cfg.training.num_processes
+    rollouts = RolloutStorage(local_num_steps,
                               cfg.training.num_processes,
                               env.observation_space.shape,
                               env.action_space,
@@ -88,12 +87,11 @@ def main(cfg):
 
     logger = EpochLogger()
 
-    num_updates = int(cfg.training.total_steps //
-                      cfg.training.num_steps //
-                      cfg.training.num_processes)
-    iter_time = time.time()
-    for updt in range(num_updates):
-        for step in range(cfg.training.num_steps):
+    num_iterations = int(cfg.training.total_steps //
+                         cfg.training.num_steps)
+    start_time = time.time()
+    for itr in range(num_iterations):
+        for step in range(local_num_steps):
             # Sample actions
             with torch.no_grad():
                 value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
@@ -123,9 +121,9 @@ def main(cfg):
                 rollouts.masks[-1]).detach()
 
         rollouts.compute_returns(next_value,
-                                 cfg.rollout.gae_lam is not None,
+                                 cfg.rollout.gae_lambda,
                                  cfg.rollout.gamma,
-                                 cfg.rollout.gae_lam)
+                                 cfg.rollout.bootstrap_value_at_time_limit)
 
         value_loss, policy_loss, dist_entropy, approx_kl, update_info = \
             agent.update(rollouts)
@@ -137,7 +135,8 @@ def main(cfg):
 
         rollouts.after_update()
 
-        if (updt + 1) % cfg.logging.save_interval == 0 or updt == num_updates - 1:
+        if ((itr + 1) % cfg.logging.save_interval == 0
+            or itr == num_iterations - 1):
             ckpt_dir = './checkpoints'
             weights_dir = osp.join(ckpt_dir, 'weights')
             os.makedirs(ckpt_dir, exist_ok=True)
@@ -147,9 +146,10 @@ def main(cfg):
                 agent.optimizer.state_dict(),
             ], osp.join(ckpt_dir, 'model.pkl'))
             torch.save(actor_critic.state_dict(),
-                osp.join(weights_dir, f'{updt + 1}.pt'))
+                osp.join(weights_dir, f'{itr + 1}.pt'))
 
-        if (updt + 1) % cfg.logging.log_interval == 0 or updt == num_updates - 1:
+        if ((itr + 1) % cfg.logging.log_interval == 0
+            or itr == num_iterations - 1):
             test_ep_returns = test_agent(actor_critic,
                                          env,
                                          cfg.training.num_test_episodes,
@@ -157,11 +157,9 @@ def main(cfg):
             for test_return in test_ep_returns:
                 logger.store(TestReturn=test_return)
 
-            total_num_steps = ((updt + 1) *
-                               cfg.training.num_processes *
+            total_num_steps = ((itr + 1) *
                                cfg.training.num_steps)
             last_num_steps =  (cfg.logging.log_interval *
-                               cfg.training.num_processes *
                                cfg.training.num_steps)
 
             logger.log_tabular('RolloutReturn', with_min_and_max=True)
@@ -177,14 +175,14 @@ def main(cfg):
                 logger.log_tabular(key, average_only=True)
             logger.log_tabular('TotalEnvInteracts', total_num_steps)
             logger.log_tabular('StepsPerSecond',
-                               last_num_steps / (time.time() - iter_time))
-            logger.log_tabular('ETA [mins]', ((time.time() - iter_time)
+                               last_num_steps / (time.time() - start_time))
+            logger.log_tabular('ETA [mins]', ((time.time() - start_time)
                                               / cfg.logging.log_interval
-                                              * (num_updates - updt - 1)
+                                              * (num_iterations - itr - 1)
                                               // 60))
-            logger.dump_tabular(updt + 1)
+            logger.dump_tabular(itr + 1)
 
-            iter_time = time.time()
+            start_time = time.time()
 
 if __name__ == "__main__":
     main()

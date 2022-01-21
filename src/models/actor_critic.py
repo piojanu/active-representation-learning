@@ -9,19 +9,14 @@ from a2c_ppo_acktr.utils import init
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None):
+    def __init__(self, obs_shape, action_space, hidden_size, recurrent):
         super(ActorCritic, self).__init__()
-        if base_kwargs is None:
-            base_kwargs = {}
-        if base is None:
-            if len(obs_shape) == 3:
-                base = CNNBase
-            elif len(obs_shape) == 1:
-                base = MLPBase
-            else:
-                raise NotImplementedError
-
-        self.base = base(obs_shape, **base_kwargs)
+        if len(obs_shape) == 3:
+            self.base = CNNBase(obs_shape, hidden_size, recurrent)
+        elif len(obs_shape) == 1:
+            self.base = MLPBase(obs_shape, hidden_size, recurrent)
+        else:
+            raise NotImplementedError
 
         if action_space.__class__.__name__ == "Discrete":
             num_outputs = action_space.n
@@ -163,7 +158,7 @@ class NNBase(nn.Module):
 
 
 class CNNBase(NNBase):
-    def __init__(self, obs_shape, recurrent=False, hidden_size=512):
+    def __init__(self, obs_shape, hidden_size=512, recurrent=False):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
@@ -199,7 +194,7 @@ class CNNBase(NNBase):
 
 
 class MLPBase(NNBase):
-    def __init__(self, obs_shape, recurrent=False, hidden_size=64):
+    def __init__(self, obs_shape, hidden_size=64, recurrent=False):
         super(MLPBase, self).__init__(recurrent, obs_shape[0], hidden_size)
 
         if recurrent:

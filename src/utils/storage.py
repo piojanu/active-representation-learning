@@ -15,6 +15,7 @@ class RolloutStorage(object):
         self.rewards = torch.zeros(num_steps, num_processes, 1)
         self.value_preds = torch.zeros(num_steps + 1, num_processes, 1)
         self.returns = torch.zeros(num_steps + 1, num_processes, 1)
+        self.advantages = torch.zeros(num_steps, num_processes, 1)
         self.action_log_probs = torch.zeros(num_steps, num_processes, 1)
         if action_space.__class__.__name__ == 'Discrete':
             action_shape = 1
@@ -38,6 +39,7 @@ class RolloutStorage(object):
         self.rewards = self.rewards.to(device)
         self.value_preds = self.value_preds.to(device)
         self.returns = self.returns.to(device)
+        self.advantages = self.advantages.to(device)
         self.action_log_probs = self.action_log_probs.to(device)
         self.actions = self.actions.to(device)
         self.masks = self.masks.to(device)
@@ -65,46 +67,44 @@ class RolloutStorage(object):
 
     def compute_returns(self,
                         next_value,
-                        use_gae,
-                        gamma,
                         gae_lambda,
-                        use_proper_time_limits=True):
-        if use_proper_time_limits:
-            if use_gae:
-                self.value_preds[-1] = next_value
-                gae = 0
-                for step in reversed(range(self.rewards.size(0))):
-                    delta = self.rewards[step] + gamma * self.value_preds[
-                        step + 1] * self.masks[step +
-                                               1] - self.value_preds[step]
-                    gae = delta + gamma * gae_lambda * self.masks[step +
-                                                                  1] * gae
-                    gae = gae * self.bad_masks[step + 1]
-                    self.returns[step] = gae + self.value_preds[step]
-            else:
-                self.returns[-1] = next_value
-                for step in reversed(range(self.rewards.size(0))):
-                    self.returns[step] = (self.returns[step + 1] * \
-                        gamma * self.masks[step + 1] + self.rewards[step]) * self.bad_masks[step + 1] \
-                        + (1 - self.bad_masks[step + 1]) * self.value_preds[step]
+                        gamma,
+                        bootstrap_value_at_time_limit):
+        # Calculate returns
+        self.returns[-1] = next_value
+        for step in reversed(range(self.rewards.size(0))):
+            self.returns[step] = (
+                self.rewards[step]
+                + self.returns[step+1] * gamma * self.masks[step+1])                
+            if bootstrap_value_at_time_limit:
+                self.returns[step] = (
+                    self.returns[step] * self.bad_masks[step+1]
+                    + (1 - self.bad_masks[step+1]) * self.value_preds[step])
+        
+        # Calculate advantages
+        if gae_lambda is not None:
+            self.value_preds[-1] = next_value
+            gae = 0
+            for step in reversed(range(self.rewards.size(0))):
+                delta = (
+                    self.rewards[step]
+                    + gamma * self.value_preds[step+1] * self.masks[step+1]
+                    - self.value_preds[step])
+                gae = (
+                    delta + gamma * gae_lambda * self.masks[step+1] * gae)
+                if bootstrap_value_at_time_limit:
+                    gae = gae * self.bad_masks[step+1]
+                self.advantages[step] = gae
         else:
-            if use_gae:
-                self.value_preds[-1] = next_value
-                gae = 0
-                for step in reversed(range(self.rewards.size(0))):
-                    delta = self.rewards[step] + gamma * self.value_preds[
-                        step + 1] * self.masks[step +
-                                               1] - self.value_preds[step]
-                    gae = delta + gamma * gae_lambda * self.masks[step +
-                                                                  1] * gae
-                    self.returns[step] = gae + self.value_preds[step]
-            else:
-                self.returns[-1] = next_value
-                for step in reversed(range(self.rewards.size(0))):
-                    self.returns[step] = self.returns[step + 1] * \
-                        gamma * self.masks[step + 1] + self.rewards[step]
+            self.advantages = self.returns[:-1] - self.value_preds[:-1]
 
-    def feed_forward_generator(self, advantages, mini_batch_size):
+        # Centre and normalize the advantages to lower the variance of
+        # the policy gradient estimator.
+        # See: http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/hw2_final.pdf
+        self.advantages = ((self.advantages - self.advantages.mean())
+                           / (self.advantages.std() + 1e-5))
+
+    def feed_forward_generator(self, mini_batch_size):
         num_steps, num_processes = self.rewards.size()[0:2]
         batch_size = num_processes * num_steps
 
@@ -114,24 +114,23 @@ class RolloutStorage(object):
             drop_last=True)
         for indices in sampler:
             obs_batch = self.obs[:-1].view(-1, *self.obs.size()[2:])[indices]
-            recurrent_hidden_states_batch = self.recurrent_hidden_states[:-1].view(
-                -1, self.recurrent_hidden_states.size(-1))[indices]
-            actions_batch = self.actions.view(-1,
-                                              self.actions.size(-1))[indices]
+            recurrent_hidden_states_batch = \
+                self.recurrent_hidden_states[:-1].view(
+                    -1, self.recurrent_hidden_states.size(-1))[indices]
+            actions_batch = self.actions.view(
+                -1, self.actions.size(-1))[indices]
             value_preds_batch = self.value_preds[:-1].view(-1, 1)[indices]
             return_batch = self.returns[:-1].view(-1, 1)[indices]
             masks_batch = self.masks[:-1].view(-1, 1)[indices]
-            old_action_log_probs_batch = self.action_log_probs.view(-1,
-                                                                    1)[indices]
-            if advantages is None:
-                adv_targ = None
-            else:
-                adv_targ = advantages.view(-1, 1)[indices]
+            old_action_log_probs_batch = \
+                self.action_log_probs.view(-1, 1)[indices]
+            adv_targ = self.advantages.view(-1, 1)[indices]
 
-            yield obs_batch, recurrent_hidden_states_batch, actions_batch, \
-                value_preds_batch, return_batch, masks_batch, old_action_log_probs_batch, adv_targ
+            yield (obs_batch, recurrent_hidden_states_batch, actions_batch,
+                   value_preds_batch, return_batch, masks_batch,
+                   old_action_log_probs_batch, adv_targ)
 
-    def recurrent_generator(self, advantages, mini_batch_size):
+    def recurrent_generator(self, mini_batch_size):
         num_steps, num_processes = self.rewards.size()[0:2]
         assert mini_batch_size % num_steps == 0, (
             "Recurrent PPO requires that the mini-batch size ({})"
@@ -160,7 +159,7 @@ class RolloutStorage(object):
                 masks_batch.append(self.masks[:-1, ind])
                 old_action_log_probs_batch.append(
                     self.action_log_probs[:, ind])
-                adv_targ.append(advantages[:, ind])
+                adv_targ.append(self.advantages[:, ind])
 
             T, N = self.num_steps, num_envs_per_batch
             # These are all tensors of size (T, N, -1)
@@ -187,5 +186,6 @@ class RolloutStorage(object):
                     old_action_log_probs_batch)
             adv_targ = _flatten_helper(T, N, adv_targ)
 
-            yield obs_batch, recurrent_hidden_states_batch, actions_batch, \
-                value_preds_batch, return_batch, masks_batch, old_action_log_probs_batch, adv_targ
+            yield (obs_batch, recurrent_hidden_states_batch, actions_batch,
+                   value_preds_batch, return_batch, masks_batch,
+                   old_action_log_probs_batch, adv_targ)
