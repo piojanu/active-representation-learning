@@ -160,31 +160,33 @@ class CNNBase(NNBase):
     def __init__(self, obs_shape, hidden_size=512, recurrent=False):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0), nn.init.calculate_gain('relu'))
+        init_relu = lambda m: init(m,
+                                   nn.init.orthogonal_,
+                                   lambda x: nn.init.constant_(x, 0),
+                                   nn.init.calculate_gain('relu'))
 
         conv_net = nn.Sequential(
-            init_(nn.Conv2d(obs_shape[0], 32, 8, stride=4)), nn.ReLU(),
-            init_(nn.Conv2d(32, 64, 4, stride=2)), nn.ReLU(),
-            init_(nn.Conv2d(64, 64, 3, stride=1)), nn.ReLU()
+            init_relu(nn.Conv2d(obs_shape[0], 32, 8, stride=4)), nn.ReLU(),
+            init_relu(nn.Conv2d(32, 64, 4, stride=2)), nn.ReLU(),
+            init_relu(nn.Conv2d(64, 64, 3, stride=1)), nn.ReLU()
         )
-        conv_output_size = np.prod(conv_net(torch.randn(1, *obs_shape)).shape)
+        n_features = np.prod(conv_net(torch.randn(1, *obs_shape)).shape)
 
-        self.main = nn.Sequential(
-            conv_net,
-            nn.Flatten(),
-            init_(nn.Linear(conv_output_size, hidden_size)), nn.ReLU()
+        self.body = nn.Sequential(
+            conv_net, nn.Flatten(),
+            init_relu(nn.Linear(n_features, hidden_size)), nn.Tanh()
         )
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0))
+        init_identity = lambda m: init(m,
+                                       nn.init.orthogonal_,
+                                       lambda x: nn.init.constant_(x, 0))
 
-        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+        self.critic_linear = init_identity(nn.Linear(hidden_size, 1))
 
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks):
-        x = self.main(inputs / 255.0)
+        x = self.body(inputs / 255.0)
 
         if self.is_recurrent:
             x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
@@ -201,8 +203,10 @@ class MLPBase(NNBase):
         else:
             num_inputs = obs_shape[0]
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0), np.sqrt(2))
+        init_ = lambda m: init(m,
+                               nn.init.orthogonal_,
+                               lambda x: nn.init.constant_(x, 0),
+                               np.sqrt(2))
 
         self.actor = nn.Sequential(
             init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),

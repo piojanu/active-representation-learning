@@ -107,4 +107,4 @@ class PPO():
 
         return (value_loss_epoch, policy_loss_epoch, dist_entropy_epoch,
                 approx_kl_epoch, {'PPOUpdates': num_updates,
-                                'PPOEpochs': epoch})
+                                'PPOEpochs': epoch + 1})
