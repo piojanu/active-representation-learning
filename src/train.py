@@ -149,17 +149,8 @@ def main(cfg):
             torch.save(actor_critic.state_dict(),
                 osp.join(weights_dir, f'{itr + 1}.pt'))
 
-        if ((itr + 1) % cfg.logging.log_interval == 0
-            or itr == num_iterations - 1):
-            test_ep_returns = test_agent(actor_critic,
-                                         env,
-                                         cfg.training.num_test_episodes,
-                                         device)
-            for test_return in test_ep_returns:
-                logger.store(TestReturn=test_return)
 
-            total_num_steps = ((itr + 1) *
-                               cfg.training.num_steps)
+        if (itr + 1) % cfg.logging.log_interval == 0:
             last_num_steps =  (cfg.logging.log_interval *
                                cfg.training.num_steps)
 
@@ -167,23 +158,34 @@ def main(cfg):
             logger.log_tabular('RolloutLength', with_min_and_max=True)
             logger.log_tabular('RolloutNumber',
                                len(logger.histogram_dict['RolloutReturn/Hist']))
-            logger.log_tabular('TestReturn', with_min_and_max=True)
             logger.log_tabular('LossValue')
             logger.log_tabular('LossPolicy')
             logger.log_tabular('DistEntropy', with_min_and_max=True)
             logger.log_tabular('ApproxKL', with_min_and_max=True)
             for key in update_info.keys():
                 logger.log_tabular(key, average_only=True)
-            logger.log_tabular('TotalEnvInteracts', total_num_steps)
             logger.log_tabular('StepsPerSecond',
                                last_num_steps / (time.time() - start_time))
             logger.log_tabular('ETA [mins]', ((time.time() - start_time)
                                               / cfg.logging.log_interval
                                               * (num_iterations - itr - 1)
                                               // 60))
-            logger.dump_tabular(itr + 1)
 
             start_time = time.time()
+
+        if ((itr + 1) % cfg.logging.log_interval == 0
+            or itr == num_iterations - 1):
+            for test_return in test_agent(actor_critic,
+                                          env,
+                                          cfg.training.num_test_episodes,
+                                          device):
+                logger.store(TestReturn=test_return)
+
+            logger.log_tabular('TestReturn', with_min_and_max=True)
+            logger.log_tabular('TotalEnvInteracts',
+                               (itr + 1) * cfg.training.num_steps)
+
+            logger.dump_tabular(itr + 1)
 
 if __name__ == "__main__":
     main()
