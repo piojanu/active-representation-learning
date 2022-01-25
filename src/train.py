@@ -12,6 +12,8 @@ from models.actor_critic import ActorCritic
 from utils.logx import EpochLogger
 from utils.storage import RolloutStorage
 
+OBS_WIDTH=26
+OBS_HEIGHT=26
 
 def test_agent(actor_critic, env, num_test_episodes, device):
     episode_returns = []
@@ -54,7 +56,9 @@ def main(cfg):
 
     env = make_vec_env(cfg.env,
                        cfg.training.num_processes,
-                       device=device)
+                       device=device,
+                       obs_width=OBS_WIDTH,
+                       obs_height=OBS_HEIGHT)
     env.seed(cfg.seed)
 
     actor_critic = ActorCritic(env.observation_space.shape,

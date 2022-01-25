@@ -166,9 +166,9 @@ class CNNBase(NNBase):
                                    nn.init.calculate_gain('relu'))
 
         conv_net = nn.Sequential(
-            init_relu(nn.Conv2d(obs_shape[0], 32, 8, stride=4)), nn.ReLU(),
+            init_relu(nn.Conv2d(obs_shape[0], 32, 4, stride=2)), nn.ReLU(),
             init_relu(nn.Conv2d(32, 64, 4, stride=2)), nn.ReLU(),
-            init_relu(nn.Conv2d(64, 64, 3, stride=1)), nn.ReLU()
+            init_relu(nn.Conv2d(64, 64, 4, stride=1)), nn.ReLU()
         )
         n_features = np.prod(conv_net(torch.randn(1, *obs_shape)).shape)
 
