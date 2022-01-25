@@ -18,12 +18,11 @@ class RolloutStorage(object):
         self.advantages = torch.zeros(num_steps, num_processes, 1)
         self.action_log_probs = torch.zeros(num_steps, num_processes, 1)
         if action_space.__class__.__name__ == 'Discrete':
-            action_shape = 1
+            self.actions = torch.zeros(num_steps, num_processes, 1,
+                                       dtype=torch.long)
         else:
-            action_shape = action_space.shape[0]
-        self.actions = torch.zeros(num_steps, num_processes, action_shape)
-        if action_space.__class__.__name__ == 'Discrete':
-            self.actions = self.actions.long()
+            self.actions = torch.zeros(num_steps, num_processes,
+                                       action_space.shape[0])
         self.non_terminal_masks = torch.ones(num_steps + 1, num_processes, 1)
         # Masks that indicate whether it's a time limit end state (1.0) or
         # a true terminal state (0.0).
@@ -55,13 +54,15 @@ class RolloutStorage(object):
         self.non_terminal_masks[self.step + 1].copy_(non_terminal_masks)
         self.bad_masks[self.step + 1].copy_(bad_masks)
 
-        self.step = (self.step + 1) % self.num_steps
+        self.step += 1
 
     def after_update(self):
         self.obs[0].copy_(self.obs[-1])
         self.recurrent_hidden_states[0].copy_(self.recurrent_hidden_states[-1])
         self.non_terminal_masks[0].copy_(self.non_terminal_masks[-1])
         self.bad_masks[0].copy_(self.bad_masks[-1])
+
+        self.step = 0
 
     def compute_returns(self,
                         last_value,
