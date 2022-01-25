@@ -138,8 +138,6 @@ def main(cfg):
                      ApproxKL=approx_kl,
                      **update_info)
 
-        rollouts.after_update()
-
         if ((itr + 1) % cfg.logging.save_interval == 0
             or itr == num_iterations - 1):
             ckpt_dir = './checkpoints'
@@ -152,7 +150,6 @@ def main(cfg):
             ], osp.join(ckpt_dir, 'model.pkl'))
             torch.save(actor_critic.state_dict(),
                 osp.join(weights_dir, f'{itr + 1}.pt'))
-
 
         if (itr + 1) % cfg.logging.log_interval == 0:
             last_num_steps =  (cfg.logging.log_interval *
@@ -179,6 +176,14 @@ def main(cfg):
 
         if ((itr + 1) % cfg.logging.log_interval == 0
             or itr == num_iterations - 1):
+            # Record the last iteration rollouts
+            logger.writer.add_video(
+                'RolloutsBuffer',
+                torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
+                itr + 1,
+                fps=15)
+
+            # Evaluate the agent
             for test_return in test_agent(actor_critic,
                                           env,
                                           cfg.training.num_test_episodes,
@@ -188,8 +193,9 @@ def main(cfg):
             logger.log_tabular('TestReturn', with_min_and_max=True)
             logger.log_tabular('TotalEnvInteracts',
                                (itr + 1) * cfg.training.num_steps)
-
             logger.dump_tabular(itr + 1)
+        
+        rollouts.after_update()
 
 if __name__ == "__main__":
     main()
