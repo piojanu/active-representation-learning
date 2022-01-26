@@ -80,7 +80,7 @@ class RolloutStorage(object):
         self.value_preds[-1] = last_value
 
         if bootstrap_value_at_time_limit:
-            self.rewards += self.bad_masks[1:] * self.value_preds[1:]
+            self.rewards += gamma * self.value_preds[1:] * self.bad_masks[1:]
 
         deltas = (self.rewards
                   + gamma * self.value_preds[1:] * self.non_terminal_masks[1:]
