@@ -15,35 +15,6 @@ from utils.storage import RolloutStorage
 OBS_WIDTH=26
 OBS_HEIGHT=26
 
-def test_agent(actor_critic, env, num_test_episodes, device):
-    episode_returns = []
-    obs = env.reset()
-    recurrent_hidden_states = torch.zeros(
-        env.num_envs, actor_critic.recurrent_hidden_state_size, device=device)
-    non_terminal_masks = torch.zeros(env.num_envs, 1, device=device)
-
-    while len(episode_returns) < num_test_episodes:
-        with torch.no_grad():
-            _, action, _, recurrent_hidden_states = actor_critic.act(
-                obs,
-                recurrent_hidden_states,
-                non_terminal_masks,
-                deterministic=True)
-
-        # Observe reward and next obs
-        obs, _, done, infos = env.step(action)
-
-        non_terminal_masks = torch.tensor(
-            [[1.0] if not done_ else [0.0] for done_ in done],
-            dtype=torch.float32,
-            device=device)
-
-        for info in infos:
-            if 'episode' in info.keys():
-                episode_returns.append(info['episode']['r'])
-
-    return episode_returns
-
 @hydra.main(config_path='spec', config_name='config')
 def main(cfg):
     print(OmegaConf.to_yaml(cfg))
@@ -167,11 +138,12 @@ def main(cfg):
                 logger.log_tabular(key, average_only=True)
             logger.log_tabular('StepsPerSecond',
                                last_num_steps / (time.time() - start_time))
-            logger.log_tabular('ETA [mins]', ((time.time() - start_time)
-                                              / cfg.logging.log_interval
-                                              * (num_iterations - itr - 1)
-                                              // 60))
+            logger.log_tabular('ETAinMins', ((time.time() - start_time)
+                                             / cfg.logging.log_interval
+                                             * (num_iterations - itr - 1)
+                                             // 60))
 
+            logger.dump_tabular(itr + 1)
             start_time = time.time()
 
         if ((itr + 1) % cfg.logging.log_interval == 0
@@ -183,17 +155,8 @@ def main(cfg):
                 itr + 1,
                 fps=15)
 
-            # Evaluate the agent
-            for test_return in test_agent(actor_critic,
-                                          env,
-                                          cfg.training.num_test_episodes,
-                                          device):
-                logger.store(TestReturn=test_return)
-
-            logger.log_tabular('TestReturn', with_min_and_max=True)
             logger.log_tabular('TotalEnvInteracts',
                                (itr + 1) * cfg.training.num_steps)
-            logger.dump_tabular(itr + 1)
         
         rollouts.after_update()
 
