@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,12 +34,14 @@ class PPO():
         self.optimizer = optim.Adam(actor_critic.parameters(), lr=learning_rate)
 
     def update(self, rollouts):
-        value_loss_epoch = 0
-        policy_loss_epoch = 0
-        dist_entropy_epoch = 0
-        approx_kl_epoch = 0
-        num_updates = 0
+        num_updates = (np.prod(rollouts.rewards.size()[0:2])
+                       // self.mini_batch_size)
         for epoch in range(self.num_epochs):
+            value_loss_epoch = 0
+            policy_loss_epoch = 0
+            dist_entropy_epoch = 0
+            approx_kl_epoch = 0
+
             if self.actor_critic.is_recurrent:
                 data_generator = rollouts.recurrent_generator(
                     self.mini_batch_size)
@@ -95,7 +98,6 @@ class PPO():
                 policy_loss_epoch += policy_loss.item()
                 dist_entropy_epoch += dist_entropy.item()
                 approx_kl_epoch += approx_kl.item()
-                num_updates += 1
             
             if approx_kl_epoch / num_updates > self.max_kl:
                 break
@@ -106,5 +108,4 @@ class PPO():
         approx_kl_epoch /= num_updates
 
         return (value_loss_epoch, policy_loss_epoch, dist_entropy_epoch,
-                approx_kl_epoch, {'PPOUpdates': num_updates,
-                                'PPOEpochs': epoch + 1})
+                approx_kl_epoch, epoch + 1)

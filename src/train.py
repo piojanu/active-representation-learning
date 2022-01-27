@@ -101,13 +101,13 @@ def main(cfg):
                                  cfg.rollout.gamma,
                                  cfg.rollout.bootstrap_value_at_time_limit)
 
-        value_loss, policy_loss, dist_entropy, approx_kl, update_info = \
+        value_loss, policy_loss, dist_entropy, approx_kl, ppo_epochs = \
             agent.update(rollouts)
         logger.store(LossValue=value_loss,
                      LossPolicy=policy_loss,
                      DistEntropy=dist_entropy,
                      ApproxKL=approx_kl,
-                     **update_info)
+                     PPOEpochs=ppo_epochs)
 
         if ((itr + 1) % cfg.logging.save_interval == 0
             or itr == num_iterations - 1):
@@ -134,8 +134,7 @@ def main(cfg):
             logger.log_tabular('LossPolicy')
             logger.log_tabular('DistEntropy', with_min_and_max=True)
             logger.log_tabular('ApproxKL', with_min_and_max=True)
-            for key in update_info.keys():
-                logger.log_tabular(key, average_only=True)
+            logger.log_tabular('PPOEpochs', average_only=True)
             logger.log_tabular('StepsPerSecond',
                                last_num_steps / (time.time() - start_time))
             logger.log_tabular('ETAinMins', ((time.time() - start_time)
@@ -143,7 +142,6 @@ def main(cfg):
                                              * (num_iterations - itr - 1)
                                              // 60))
 
-            logger.dump_tabular(itr + 1)
             start_time = time.time()
 
         if ((itr + 1) % cfg.logging.log_interval == 0
@@ -157,6 +155,7 @@ def main(cfg):
 
             logger.log_tabular('TotalEnvInteracts',
                                (itr + 1) * cfg.training.num_steps)
+            logger.dump_tabular(itr + 1)
         
         rollouts.after_update()
 
