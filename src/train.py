@@ -101,13 +101,13 @@ def main(cfg):
                                  cfg.rollout.gamma,
                                  cfg.rollout.bootstrap_value_at_time_limit)
 
-        value_loss, policy_loss, dist_entropy, approx_kl, ppo_epochs = \
+        value_loss, policy_loss, dist_entropy, approx_kl, ppo_updates = \
             agent.update(rollouts)
         logger.store(LossValue=value_loss,
                      LossPolicy=policy_loss,
                      DistEntropy=dist_entropy,
                      ApproxKL=approx_kl,
-                     PPOEpochs=ppo_epochs)
+                     PPOUpdates=ppo_updates)
 
         if ((itr + 1) % cfg.logging.save_interval == 0
             or itr == num_iterations - 1):
@@ -134,7 +134,7 @@ def main(cfg):
             logger.log_tabular('LossPolicy')
             logger.log_tabular('DistEntropy', with_min_and_max=True)
             logger.log_tabular('ApproxKL', with_min_and_max=True)
-            logger.log_tabular('PPOEpochs', average_only=True)
+            logger.log_tabular('PPOUpdates', average_only=True)
             logger.log_tabular('StepsPerSecond',
                                last_num_steps / (time.time() - start_time))
             logger.log_tabular('ETAinMins', ((time.time() - start_time)

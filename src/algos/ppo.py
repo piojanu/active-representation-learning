@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -34,14 +33,12 @@ class PPO():
         self.optimizer = optim.Adam(actor_critic.parameters(), lr=learning_rate)
 
     def update(self, rollouts):
-        num_updates = (np.prod(rollouts.rewards.size()[0:2])
-                       // self.mini_batch_size)
-        for epoch in range(self.num_epochs):
-            value_loss_epoch = 0
-            policy_loss_epoch = 0
-            dist_entropy_epoch = 0
-            approx_kl_epoch = 0
-
+        total_value_loss = 0
+        total_policy_loss = 0
+        total_dist_entropy = 0
+        total_updates = 0
+        stop_training = False
+        for _ in range(self.num_epochs):
             if self.actor_critic.is_recurrent:
                 data_generator = rollouts.recurrent_generator(
                     self.mini_batch_size)
@@ -67,6 +64,10 @@ class PPO():
                     log_ratio = log_probs - old_log_probs_batch
                     approx_kl = torch.mean(
                         (torch.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+
+                if approx_kl.item() > self.max_kl:
+                    stop_training = True
+                    break
 
                 ratio = torch.exp(log_probs - old_log_probs_batch)
                 surr1 = ratio * adv_targ
@@ -94,18 +95,16 @@ class PPO():
                                          self.max_grad_norm)
                 self.optimizer.step()
 
-                value_loss_epoch += value_loss.item()
-                policy_loss_epoch += policy_loss.item()
-                dist_entropy_epoch += dist_entropy.item()
-                approx_kl_epoch += approx_kl.item()
-            
-            if approx_kl_epoch / num_updates > self.max_kl:
-                break
-            
-        value_loss_epoch /= num_updates
-        policy_loss_epoch /= num_updates
-        dist_entropy_epoch /= num_updates
-        approx_kl_epoch /= num_updates
+                total_value_loss += value_loss.item()
+                total_policy_loss += policy_loss.item()
+                total_dist_entropy += dist_entropy.item()
+                total_updates += 1
 
-        return (value_loss_epoch, policy_loss_epoch, dist_entropy_epoch,
-                approx_kl_epoch, epoch + 1)
+            if stop_training:
+                break
+
+        return (total_value_loss / total_updates,
+                total_policy_loss / total_updates,
+                total_dist_entropy / total_updates,
+                approx_kl.item(),
+                total_updates)
