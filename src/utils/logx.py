@@ -102,6 +102,8 @@ class Logger:
             vals.append(val)
             valstr = '%8.3g' % val if hasattr(val, '__float__') else val
             print(fmt % (key, valstr))
+            if val == '':
+                continue
             self.writer.add_scalar(key, val, global_step)
             if self.neptune_run is not None:
                 self.neptune_run[key].log(val, global_step)
