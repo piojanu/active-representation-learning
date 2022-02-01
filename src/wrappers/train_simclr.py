@@ -56,8 +56,10 @@ class TrainSimCLR(gym.Wrapper):
                                           lr=learning_rate)
 
     def compute_loss(self, batch):
-        x_i = self.scripted_transforms(batch)
-        x_j = self.scripted_transforms(batch)
+        # WA: Call `.contiguous()` to prevent "[...] grad and param do not
+        #     obey the gradient layout contract [...]".
+        x_i = self.scripted_transforms(batch).contiguous()
+        x_j = self.scripted_transforms(batch).contiguous()
         
         _, _, z_i, z_j = self.model(x_i, x_j)
 
