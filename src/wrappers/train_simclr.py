@@ -1,10 +1,11 @@
 import gym
 import torch
 import torchvision
-from torch import nn
 
 from simclr.modules import NT_Xent
 from simclr.simclr import SimCLR
+
+from models.resnet import ResNetEncoder
 
 class TrainSimCLR(gym.Wrapper):
     """Collects data and trains SimCLR encoder, where loss drop is reward."""
@@ -37,8 +38,7 @@ class TrainSimCLR(gym.Wrapper):
         self.scripted_transforms = torch.jit.script(transforms)
 
         # Create SimCLR encoder
-        self.encoder = torchvision.models.resnet18()
-        self.encoder.fc = nn.Identity()
+        self.encoder = ResNetEncoder(layers=[2, 2])
         n_features = self.encoder(
             torch.randn(1, *env.observation_space.shape)).shape[1]
         self.encoder.to(self.device)
