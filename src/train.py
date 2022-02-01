@@ -28,10 +28,10 @@ def main(cfg):
     env = make_vec_env(cfg.env,
                        cfg.training.num_processes,
                        device=device,
-                       obs_width=OBS_WIDTH,
-                       obs_height=OBS_HEIGHT,
                        agent_obs_size=(26, 26),
-                       encoder_kwargs=cfg.encoder)
+                       encoder_kwargs=cfg.encoder,
+                       gym_kwargs=dict(obs_width=OBS_WIDTH,
+                                       obs_height=OBS_HEIGHT))
     env.seed(cfg.seed)
 
     actor_critic = ActorCritic(env.observation_space.shape,

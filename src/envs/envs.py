@@ -12,9 +12,16 @@ from a2c_ppo_acktr.envs import TimeLimitMask
 from a2c_ppo_acktr.envs import TransposeImage
 from wrappers import TrainSimCLR
 
-def make_env(env_name, encoder_kwargs, **kwargs):
+def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
+    def _get_device_name(idx):
+        if torch.cuda.is_available():
+            # Distribute envs evenly across GPUs starting from the second device
+            return 'cuda:' + str((idx + 1) % torch.cuda.device_count())
+        else:
+            return 'cpu'
+
     def _thunk():
-        env = gym.make(env_name, **kwargs)
+        env = gym.make(env_name, **gym_kwargs)
         env = RecordEpisodeStatistics(env)
 
         if str(env.__class__.__name__).find('TimeLimit') >= 0:
@@ -25,7 +32,7 @@ def make_env(env_name, encoder_kwargs, **kwargs):
         if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
             env = TransposeImage(env, op=[2, 0, 1])
 
-        env = TrainSimCLR(env, **encoder_kwargs)
+        env = TrainSimCLR(env, _get_device_name(proc_idx), **encoder_kwargs)
 
         return env
 
@@ -33,12 +40,12 @@ def make_env(env_name, encoder_kwargs, **kwargs):
 
 
 def make_vec_env(env_name, num_processes, device, agent_obs_size,
-                 encoder_kwargs, **kwargs):
+                 encoder_kwargs, gym_kwargs):
     if num_processes > 1:
-        env = SubprocVecEnv([
-            make_env(env_name, encoder_kwargs, **kwargs) for _ in range(num_processes)])
+        env = SubprocVecEnv([make_env(env_name, idx, encoder_kwargs, gym_kwargs)
+                             for idx in range(num_processes)])
     else:
-        env = DummyVecEnv([make_env(env_name, encoder_kwargs, **kwargs)])
+        env = DummyVecEnv([make_env(env_name, 0, encoder_kwargs, gym_kwargs)])
     env = PyTorchToDevice(env, device)
     env = PyTorchResizeObs(env, agent_obs_size)
 

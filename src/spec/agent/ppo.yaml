@@ -11,5 +11,5 @@ training:
   learning_rate: 3e-4 # Learning rate
   num_epochs: 10 # Numbers of PPO training iterations
   max_grad_norm: 0.5 # Max norm of gradients
-  max_kl: 0.015 # Stop PPO epoch if KL divergence between old and new policies exceeds this value.
-  mini_batch_size: 128 # PPO update mini-batch size
+  max_kl: 0.015 # Stop PPO epoch if KL divergence between old and new policies exceeds this value
+  mini_batch_size: 256 # PPO update mini-batch size

@@ -9,16 +9,13 @@ from models.resnet import ResNetEncoder
 
 class TrainSimCLR(gym.Wrapper):
     """Collects data and trains SimCLR encoder, where loss drop is reward."""
-    def __init__(self, env, batch_size, learning_rate, num_residual_blocks,
+    def __init__(self, env, device_name, batch_size, learning_rate,
                  projection_dim, temperature):
         super().__init__(env)
 
         self.batch_size = batch_size
 
-        if torch.cuda.is_available() and torch.cuda.device_count() > 1:
-            self.device = torch.device('cuda:1')
-        else:
-            self.device = torch.device('cpu')
+        self.device = torch.device(device_name)
         self.buffer = torch.zeros(self.batch_size,
                                   *self.observation_space.shape).to(self.device)
         self.ptr = 0
