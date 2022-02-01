@@ -1,15 +1,18 @@
 import gym
 import gym_miniworld
+import numpy as np
 import torch
-from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
+from gym.wrappers import RecordEpisodeStatistics
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.vec_env import VecEnvWrapper
+from torchvision.transforms import Resize
 
 from a2c_ppo_acktr.envs import TimeLimitMask
 from a2c_ppo_acktr.envs import TransposeImage
+from wrappers import TrainSimCLR
 
-def make_env(env_name, **kwargs):
+def make_env(env_name, encoder_kwargs, **kwargs):
     def _thunk():
         env = gym.make(env_name, **kwargs)
         env = RecordEpisodeStatistics(env)
@@ -22,20 +25,42 @@ def make_env(env_name, **kwargs):
         if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
             env = TransposeImage(env, op=[2, 0, 1])
 
+        env = TrainSimCLR(env, **encoder_kwargs)
+
         return env
 
     return _thunk
 
 
-def make_vec_env(env_name, num_processes, device, **kwargs):
+def make_vec_env(env_name, num_processes, device, agent_obs_size,
+                 encoder_kwargs, **kwargs):
     if num_processes > 1:
         env = SubprocVecEnv([
-            make_env(env_name, **kwargs) for _ in range(num_processes)])
+            make_env(env_name, encoder_kwargs, **kwargs) for _ in range(num_processes)])
     else:
-        env = DummyVecEnv([make_env(env_name, **kwargs)])
+        env = DummyVecEnv([make_env(env_name, encoder_kwargs, **kwargs)])
     env = PyTorchToDevice(env, device)
+    env = PyTorchResizeObs(env, agent_obs_size)
 
     return env
+
+class PyTorchResizeObs(VecEnvWrapper):
+    def __init__(self, venv, obs_size):
+        super().__init__(venv)
+
+        self.transformation = Resize(obs_size)
+
+        new_shape = self.observation_space.shape[:1] + obs_size
+        self.observation_space = gym.spaces.Box(low=0, high=255,
+                                                shape=new_shape, dtype=np.uint8)
+
+    def reset(self):
+        obs = self.venv.reset()
+        return self.transformation(obs)
+
+    def step_wait(self):
+        obs, rew, done, info = self.venv.step_wait()
+        return self.transformation(obs), rew, done, info
 
 class PyTorchToDevice(VecEnvWrapper):
     def __init__(self, venv, device):

@@ -12,8 +12,8 @@ from models.actor_critic import ActorCritic
 from utils.logx import EpochLogger
 from utils.storage import RolloutStorage
 
-OBS_WIDTH=26
-OBS_HEIGHT=26
+OBS_WIDTH=64
+OBS_HEIGHT=64
 
 @hydra.main(config_path='spec', config_name='config')
 def main(cfg):
@@ -29,7 +29,9 @@ def main(cfg):
                        cfg.training.num_processes,
                        device=device,
                        obs_width=OBS_WIDTH,
-                       obs_height=OBS_HEIGHT)
+                       obs_height=OBS_HEIGHT,
+                       agent_obs_size=(26, 26),
+                       encoder_kwargs=cfg.encoder)
     env.seed(cfg.seed)
 
     actor_critic = ActorCritic(env.observation_space.shape,
@@ -69,9 +71,10 @@ def main(cfg):
         for step in range(local_num_steps):
             # Sample actions
             with torch.no_grad():
-                value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
-                    rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                    rollouts.non_terminal_masks[step])
+                value, action, action_log_prob, recurrent_hidden_states = \
+                    actor_critic.act(rollouts.obs[step],
+                                     rollouts.recurrent_hidden_states[step],
+                                     rollouts.non_terminal_masks[step])
 
             # Observe reward and next obs
             obs, reward, done, infos = env.step(action)
@@ -80,6 +83,8 @@ def main(cfg):
                 if 'episode' in info.keys():
                     logger.store(RolloutReturn=info['episode']['r'],
                                  RolloutLength=info['episode']['l'])
+                if 'LossEncoder' in info.keys():
+                    logger.store(LossEncoder=info['LossEncoder'])
 
             # If done then clean the history of observations.
             non_terminal_masks = torch.FloatTensor(
@@ -132,6 +137,7 @@ def main(cfg):
                                len(logger.histogram_dict['RolloutReturn/Hist']))
             logger.log_tabular('LossValue')
             logger.log_tabular('LossPolicy')
+            logger.log_tabular('LossEncoder')
             logger.log_tabular('DistEntropy', with_min_and_max=True)
             logger.log_tabular('ApproxKL', with_min_and_max=True)
             logger.log_tabular('PPOUpdates', average_only=True)

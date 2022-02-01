@@ -1,5 +1,6 @@
 defaults:
   - agent: ppo
+  - encoder: simclr
   - _self_
 hydra:
   run:
@@ -24,6 +25,6 @@ rollout:
 seed: 42
 training:
   cuda: True
-  num_processes: 16 # How many CPU processes to use for data collection
+  num_processes: 4 # How many CPU processes to use for data collection
   num_steps: 2048 # Number of environment interactions before policy improvement
   total_steps: 2e6 # Total environment interactions throughout training

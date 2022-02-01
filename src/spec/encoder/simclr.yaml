@@ -1,0 +1,5 @@
+batch_size: 128
+learning_rate: 3e-4
+num_residual_blocks: 2
+projection_dim: 64
+temperature: 0.5
