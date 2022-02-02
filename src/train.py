@@ -1,5 +1,6 @@
 import os
 import os.path as osp
+import sys
 import time
 
 import hydra
@@ -10,6 +11,7 @@ from algos.ppo import PPO
 from envs import make_vec_env
 from models.actor_critic import ActorCritic
 from utils.logx import EpochLogger
+from utils.namesgenerator import get_random_name
 from utils.storage import RolloutStorage
 
 OBS_WIDTH=64
@@ -166,4 +168,15 @@ def main(cfg):
         rollouts.after_update()
 
 if __name__ == "__main__":
+    try:
+        sys.argv.remove('--mock')
+        is_mock = True
+    except ValueError:
+        is_mock = False
+
+    # Get and register this run name
+    run_name = get_random_name() if not is_mock else 'mock'
+    OmegaConf.register_new_resolver('run_name', lambda : run_name)
+    print(f'This run name is "{run_name}", good luck!')
+    
     main()
