@@ -15,8 +15,15 @@ from wrappers import TrainSimCLR
 def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
     def _get_device_name(idx):
         if torch.cuda.is_available():
-            # Distribute envs evenly across GPUs starting from the second device
-            return 'cuda:' + str((idx + 1) % torch.cuda.device_count())
+            if torch.cuda.device_count() == 1:
+                return 'cuda:0'
+            
+            # The first GPU serves OGL and the agent training, skip it once
+            if idx == 0:
+                return 'cuda:1'
+
+            # Distribute remaining environments evenly across GPUs
+            return 'cuda:' + str(idx % torch.cuda.device_count())
         else:
             return 'cpu'
 

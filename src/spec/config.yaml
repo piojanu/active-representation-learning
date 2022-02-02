@@ -25,6 +25,6 @@ rollout:
 seed: 42
 training:
   cuda: True
-  num_processes: 7 # How many CPU processes to use for data collection
-  num_steps: 1792 # Number of environment interactions before policy improvement
+  num_processes: 8 # How many CPU processes to use for data collection
+  num_steps: 2048 # Number of environment interactions before policy improvement
   total_steps: 2e6 # Total environment interactions throughout training
