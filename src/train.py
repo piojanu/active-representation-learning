@@ -87,6 +87,8 @@ def main(cfg):
                                  RolloutLength=info['episode']['l'])
                 if 'LossEncoder' in info.keys():
                     logger.store(LossEncoder=info['LossEncoder'])
+                if 'LossDelta' in info.keys():
+                    logger.store(LossDelta=info['LossDelta'])
 
             # If done then clean the history of observations.
             non_terminal_masks = torch.FloatTensor(
@@ -140,6 +142,7 @@ def main(cfg):
             logger.log_tabular('LossValue')
             logger.log_tabular('LossPolicy')
             logger.log_tabular('LossEncoder')
+            logger.log_tabular('LossDelta', with_min_and_max=True)
             logger.log_tabular('DistEntropy', with_min_and_max=True)
             logger.log_tabular('ApproxKL', with_min_and_max=True)
             logger.log_tabular('PPOUpdates', average_only=True)

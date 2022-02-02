@@ -9,11 +9,12 @@ from models.resnet import ResNetEncoder
 
 class TrainSimCLR(gym.Wrapper):
     """Collects data and trains SimCLR encoder, where loss drop is reward."""
-    def __init__(self, env, device_name, batch_size, learning_rate,
+    def __init__(self, env, device_name, batch_size, learning_rate, mixing_coef,
                  projection_dim, temperature):
         super().__init__(env)
 
         self.batch_size = batch_size
+        self.mixing_coef = mixing_coef
 
         self.device = torch.device(device_name)
         self.buffer = torch.zeros(self.batch_size,
@@ -52,12 +53,15 @@ class TrainSimCLR(gym.Wrapper):
         self.optimizer = torch.optim.Adam(self.model.parameters(),
                                           lr=learning_rate)
 
-    def compute_loss(self, batch):
+    def transform_batch(self, batch):
         # WA: Call `.contiguous()` to prevent "[...] grad and param do not
         #     obey the gradient layout contract [...]".
         x_i = self.scripted_transforms(batch).contiguous()
         x_j = self.scripted_transforms(batch).contiguous()
-        
+
+        return x_i, x_j
+
+    def compute_loss(self, x_i, x_j):
         _, _, z_i, z_j = self.model(x_i, x_j)
 
         return self.criterion(z_i, z_j)
@@ -69,12 +73,21 @@ class TrainSimCLR(gym.Wrapper):
         self.ptr += 1
 
         if self.ptr == self.batch_size:
+            x_i, x_j = self.transform_batch(self.buffer)
+            
             self.optimizer.zero_grad()
-            loss = self.compute_loss(self.buffer)
+            loss = self.compute_loss(x_i, x_j)
             loss.backward()
             self.optimizer.step()
 
-            info['LossEncoder'] = loss.item()
-            self.ptr = 0
+            new_loss = self.compute_loss(x_i, x_j)
+            delta_loss = loss.item() - new_loss.item()
 
-        return obs, rew, done, info
+            info['LossEncoder'] = loss.item()
+            info['LossDelta'] = delta_loss
+            self.ptr = 0
+        else:
+            delta_loss = 0
+            
+        mix_rew = (1 - self.mixing_coef) * rew + self.mixing_coef * delta_loss
+        return obs, mix_rew, done, info
