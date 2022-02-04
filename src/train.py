@@ -141,8 +141,9 @@ def main(cfg):
                                len(logger.histogram_dict['RolloutReturn/Hist']))
             logger.log_tabular('LossValue')
             logger.log_tabular('LossPolicy')
-            logger.log_tabular('LossEncoder')
-            logger.log_tabular('LossDelta', with_min_and_max=True)
+            if len(cfg.encoder) > 0:
+                logger.log_tabular('LossEncoder')
+                logger.log_tabular('LossDelta', with_min_and_max=True)
             logger.log_tabular('DistEntropy', with_min_and_max=True)
             logger.log_tabular('ApproxKL', with_min_and_max=True)
             logger.log_tabular('PPOUpdates', average_only=True)

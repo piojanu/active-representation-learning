@@ -39,7 +39,8 @@ def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
         if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
             env = TransposeImage(env, op=[2, 0, 1])
 
-        env = TrainSimCLR(env, _get_device_name(proc_idx), **encoder_kwargs)
+        if len(encoder_kwargs) > 0:
+            env = TrainSimCLR(env, _get_device_name(proc_idx), **encoder_kwargs)
 
         return env
 
