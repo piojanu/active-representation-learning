@@ -20,6 +20,7 @@ logging:
   save_interval: 100 # Save every N policy iterations
 rollout:
   bootstrap_value_at_time_limit: False
+  force_non_episodic: True # Force the advantage calculation as if the env. was non-episodic
   gae_lambda: 0.95 # Generalized Advantage Estimation (GAE) lambda parameter (null to disable)
   gamma: 0.99 # Rewards discount factor
 seed: 42

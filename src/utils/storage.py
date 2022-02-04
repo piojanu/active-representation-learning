@@ -68,7 +68,8 @@ class RolloutStorage(object):
                         last_value,
                         gae_lambda,
                         gamma,
-                        bootstrap_value_at_time_limit):
+                        bootstrap_value_at_time_limit,
+                        force_non_episodic):
         '''Compute the lambda-return (TD(lambda) estimate) and GAE advantage.
 
         The TD(lambda) estimator has also two special cases:
@@ -79,17 +80,20 @@ class RolloutStorage(object):
         '''
         self.value_preds[-1] = last_value
 
-        if bootstrap_value_at_time_limit:
-            self.rewards += gamma * self.value_preds[1:] * self.bad_masks[1:]
+        if force_non_episodic:
+            masks = torch.ones_like(self.non_terminal_masks)
+        elif bootstrap_value_at_time_limit:
+            masks = torch.logical_or(
+                self.non_terminal_masks, self.bad_masks).float()
+        else:
+            masks = self.non_terminal_masks
 
-        deltas = (self.rewards
-                  + gamma * self.value_preds[1:] * self.non_terminal_masks[1:]
+        deltas = (self.rewards + gamma * self.value_preds[1:] * masks[1:]
                   - self.value_preds[:-1])
 
         gae = 0
         for step in reversed(range(self.rewards.size(0))):
-            gae = (deltas[step]
-                   + gamma * gae_lambda * self.non_terminal_masks[step+1] * gae)
+            gae = deltas[step] + gamma * gae_lambda * masks[step + 1] * gae
             self.advantages[step] = gae
 
         self.returns[:] = self.advantages[:] + self.value_preds[:-1]

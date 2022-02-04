@@ -108,7 +108,8 @@ def main(cfg):
         rollouts.compute_returns(last_value,
                                  cfg.rollout.gae_lambda,
                                  cfg.rollout.gamma,
-                                 cfg.rollout.bootstrap_value_at_time_limit)
+                                 cfg.rollout.bootstrap_value_at_time_limit,
+                                 cfg.rollout.force_non_episodic)
 
         value_loss, policy_loss, dist_entropy, approx_kl, ppo_updates = \
             agent.update(rollouts)
