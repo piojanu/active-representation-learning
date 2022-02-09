@@ -13,23 +13,26 @@ from utils.logx import InfoLogger
 from wrappers import TrainSimCLR
 
 
-def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
-    def _get_device_name(idx):
+def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
+    def _get_device_name(rank):
         if torch.cuda.is_available():
             if torch.cuda.device_count() == 1:
                 return "cuda:0"
 
             # The first GPU serves OGL and the agent training, skip it once
-            if idx == 0:
+            if rank == 0:
                 return "cuda:1"
 
             # Distribute remaining environments evenly across GPUs
-            return "cuda:" + str(idx % torch.cuda.device_count())
+            return "cuda:" + str(rank % torch.cuda.device_count())
         else:
             return "cpu"
 
     def _thunk():
         env = gym.make(env_name, **gym_kwargs)
+        env.seed(seed + rank)
+        env.action_space.seed(seed + rank)
+
         if str(env.__class__.__name__).find("TimeLimit") >= 0:
             env = TimeLimitMask(env)
 
@@ -39,7 +42,7 @@ def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
             env = TransposeImage(env, op=[2, 0, 1])
 
         if len(encoder_kwargs) > 0:
-            env = TrainSimCLR(env, _get_device_name(proc_idx), **encoder_kwargs)
+            env = TrainSimCLR(env, _get_device_name(rank), **encoder_kwargs)
         else:
             env = RecordEpisodeStatistics(env)
 
@@ -49,17 +52,17 @@ def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
 
 
 def make_vec_env(
-    env_name, num_processes, device, agent_obs_size, encoder_kwargs, gym_kwargs
+    env_name, num_processes, device, seed, agent_obs_size, encoder_kwargs, gym_kwargs
 ):
     if num_processes > 1:
         env = SubprocVecEnv(
             [
-                make_env(env_name, idx, encoder_kwargs, gym_kwargs)
+                make_env(env_name, idx, seed, encoder_kwargs, gym_kwargs)
                 for idx in range(num_processes)
             ]
         )
     else:
-        env = DummyVecEnv([make_env(env_name, 0, encoder_kwargs, gym_kwargs)])
+        env = DummyVecEnv([make_env(env_name, 0, seed, encoder_kwargs, gym_kwargs)])
     env = PyTorchToDevice(env, device)
     env = PyTorchResizeObs(env, agent_obs_size)
 

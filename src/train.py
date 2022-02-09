@@ -37,11 +37,11 @@ def main(cfg):
         cfg.env,
         cfg.training.num_processes,
         device=device,
+        seed=cfg.seed,
         agent_obs_size=(26, 26),
         encoder_kwargs=cfg.encoder,
         gym_kwargs=dict(obs_width=OBS_WIDTH, obs_height=OBS_HEIGHT),
     )
-    env.seed(cfg.seed)
 
     env_info_loggers = []
     if all(env.env_is_wrapped(RecordEpisodeStatistics)):
