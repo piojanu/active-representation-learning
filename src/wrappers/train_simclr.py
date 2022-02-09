@@ -19,7 +19,6 @@ class TrainSimCLR(gym.Wrapper):
         self.device = torch.device(device_name)
         self.buffer = torch.zeros(self.batch_size,
                                   *self.observation_space.shape).to(self.device)
-        self.old_loss = None
         self.ptr = 0
 
         # Create SimCLR transformation
@@ -83,20 +82,13 @@ class TrainSimCLR(gym.Wrapper):
             loss.backward()
             self.optimizer.step()
 
-            if self.old_loss is None:
-                self.old_loss = loss.item()
+            info['LossEncoder'] = loss.item()
+            self.ptr = 0
 
             with torch.no_grad():
-                new_loss = self.compute_loss(x_i, x_j)
-                delta_loss = self.old_loss - new_loss.item()
-
-            info['LossEncoder'] = loss.item()
-            info['LossDelta'] = delta_loss
-
-            self.old_loss = new_loss.item()
-            self.ptr = 0
-        else:
-            delta_loss = 0
+                rew = (1 - self.mixing_coef) * rew + \
+                      self.mixing_coef * (5.0 - loss.item())
+        else: 
+            rew = (1 - self.mixing_coef) * rew
             
-        mix_rew = (1 - self.mixing_coef) * rew + self.mixing_coef * delta_loss
-        return obs, mix_rew, done, info
+        return obs, rew, done, info
