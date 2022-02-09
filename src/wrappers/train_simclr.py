@@ -5,9 +5,10 @@ from simclr.modules import NT_Xent
 from simclr.simclr import SimCLR
 
 from models.resnet import ResNetEncoder
+from utils.logx import InfoLogger
 
 
-class TrainSimCLR(gym.Wrapper):
+class TrainSimCLR(gym.Wrapper, InfoLogger):
     """Collects data and trains SimCLR encoder, where loss drop is reward."""
 
     def __init__(
@@ -104,3 +105,12 @@ class TrainSimCLR(gym.Wrapper):
             rew = (1 - self.mixing_coef) * rew
 
         return obs, rew, done, info
+
+    @staticmethod
+    def log_info(logger, info):
+        if "LossEncoder" in info.keys():
+            logger.store(LossEncoder=info["LossEncoder"])
+
+    @staticmethod
+    def compute_stats(logger):
+        logger.log_tabular("LossEncoder")

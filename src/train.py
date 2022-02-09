@@ -5,14 +5,16 @@ import time
 
 import hydra
 import torch
+from gym.wrappers import RecordEpisodeStatistics
 from omegaconf import OmegaConf
 
 from algos.ppo import PPO
-from envs import make_vec_env
+from envs import EpisodeInfoLogger, make_vec_env
 from models.actor_critic import ActorCritic
 from utils.logx import EpochLogger
 from utils.namesgenerator import get_random_name
 from utils.storage import RolloutStorage
+from wrappers import TrainSimCLR
 
 OBS_WIDTH = 64
 OBS_HEIGHT = 64
@@ -40,6 +42,12 @@ def main(cfg):
         gym_kwargs=dict(obs_width=OBS_WIDTH, obs_height=OBS_HEIGHT),
     )
     env.seed(cfg.seed)
+
+    env_info_loggers = []
+    if all(env.env_is_wrapped(RecordEpisodeStatistics)):
+        env_info_loggers.append(EpisodeInfoLogger)
+    if all(env.env_is_wrapped(TrainSimCLR)):
+        env_info_loggers.append(TrainSimCLR)
 
     actor_critic = ActorCritic(
         env.observation_space.shape,
@@ -96,15 +104,9 @@ def main(cfg):
 
             # Observe reward and next obs
             obs, reward, done, infos = env.step(action)
-
             for info in infos:
-                if "episode" in info.keys():
-                    logger.store(
-                        RolloutReturn=info["episode"]["r"],
-                        RolloutLength=info["episode"]["l"],
-                    )
-                if "LossEncoder" in info.keys():
-                    logger.store(LossEncoder=info["LossEncoder"])
+                for info_logger in env_info_loggers:
+                    info_logger.log_info(logger, info)
 
             # If done then clean the history of observations.
             non_terminal_masks = torch.FloatTensor(
@@ -139,16 +141,8 @@ def main(cfg):
             cfg.rollout.force_non_episodic,
         )
 
-        value_loss, policy_loss, dist_entropy, approx_kl, ppo_updates = agent.update(
-            rollouts
-        )
-        logger.store(
-            LossValue=value_loss,
-            LossPolicy=policy_loss,
-            DistEntropy=dist_entropy,
-            ApproxKL=approx_kl,
-            PPOUpdates=ppo_updates,
-        )
+        info = agent.update(rollouts)
+        agent.log_info(logger, info)
 
         if (itr + 1) % cfg.logging.save_interval == 0 or itr == num_iterations - 1:
             ckpt_dir = "./checkpoints"
@@ -169,18 +163,9 @@ def main(cfg):
         if (itr + 1) % cfg.logging.log_interval == 0:
             last_num_steps = cfg.logging.log_interval * cfg.training.num_steps
 
-            logger.log_tabular("RolloutReturn", with_min_and_max=True)
-            logger.log_tabular("RolloutLength", with_min_and_max=True)
-            logger.log_tabular(
-                "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
-            )
-            logger.log_tabular("LossValue")
-            logger.log_tabular("LossPolicy")
-            if len(cfg.encoder) > 0:
-                logger.log_tabular("LossEncoder")
-            logger.log_tabular("DistEntropy", with_min_and_max=True)
-            logger.log_tabular("ApproxKL", with_min_and_max=True)
-            logger.log_tabular("PPOUpdates", average_only=True)
+            for info_logger in env_info_loggers:
+                info_logger.compute_stats(logger)
+            agent.compute_stats(logger)
             logger.log_tabular(
                 "StepsPerSecond", last_num_steps / (time.time() - start_time)
             )

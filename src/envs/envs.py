@@ -9,6 +9,7 @@ from gym.wrappers import RecordEpisodeStatistics
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
 from torchvision.transforms import Resize
 
+from utils.logx import InfoLogger
 from wrappers import TrainSimCLR
 
 
@@ -29,8 +30,6 @@ def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
 
     def _thunk():
         env = gym.make(env_name, **gym_kwargs)
-        env = RecordEpisodeStatistics(env)
-
         if str(env.__class__.__name__).find("TimeLimit") >= 0:
             env = TimeLimitMask(env)
 
@@ -41,6 +40,8 @@ def make_env(env_name, proc_idx, encoder_kwargs, gym_kwargs):
 
         if len(encoder_kwargs) > 0:
             env = TrainSimCLR(env, _get_device_name(proc_idx), **encoder_kwargs)
+        else:
+            env = RecordEpisodeStatistics(env)
 
         return env
 
@@ -63,6 +64,24 @@ def make_vec_env(
     env = PyTorchResizeObs(env, agent_obs_size)
 
     return env
+
+
+class EpisodeInfoLogger(InfoLogger):
+    @staticmethod
+    def log_info(logger, info):
+        if "episode" in info.keys():
+            logger.store(
+                RolloutReturn=info["episode"]["r"],
+                RolloutLength=info["episode"]["l"],
+            )
+
+    @staticmethod
+    def compute_stats(logger):
+        logger.log_tabular("RolloutReturn", with_min_and_max=True)
+        logger.log_tabular("RolloutLength", with_min_and_max=True)
+        logger.log_tabular(
+            "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
+        )
 
 
 class PyTorchResizeObs(VecEnvWrapper):

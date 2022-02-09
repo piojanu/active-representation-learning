@@ -20,7 +20,6 @@ class PPO:
         max_kl,
         mini_batch_size,
     ):
-
         self.actor_critic = actor_critic
 
         self.clip_ratio_pi = clip_ratio_pi
@@ -121,10 +120,28 @@ class PPO:
             if stop_training:
                 break
 
-        return (
-            total_value_loss / total_updates,
-            total_policy_loss / total_updates,
-            total_dist_entropy / total_updates,
-            approx_kl.item(),
-            total_updates,
+        return dict(
+            LossValue=total_value_loss / total_updates,
+            LossPolicy=total_policy_loss / total_updates,
+            DistEntropy=total_dist_entropy / total_updates,
+            ApproxKL=approx_kl.item(),
+            PPOUpdates=total_updates,
         )
+
+    @staticmethod
+    def log_info(logger, info):
+        logger.store(
+            LossValue=info["LossValue"],
+            LossPolicy=info["LossPolicy"],
+            DistEntropy=info["DistEntropy"],
+            ApproxKL=info["ApproxKL"],
+            PPOUpdates=info["PPOUpdates"],
+        )
+
+    @staticmethod
+    def compute_stats(logger):
+        logger.log_tabular("LossValue")
+        logger.log_tabular("LossPolicy")
+        logger.log_tabular("DistEntropy", with_min_and_max=True)
+        logger.log_tabular("ApproxKL", with_min_and_max=True)
+        logger.log_tabular("PPOUpdates", average_only=True)
