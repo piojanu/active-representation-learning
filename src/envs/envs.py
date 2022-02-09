@@ -5,7 +5,8 @@ import gym_miniworld
 import numpy as np
 import torch
 from a2c_ppo_acktr.envs import TimeLimitMask, TransposeImage
-from gym.wrappers import RecordEpisodeStatistics
+from gym.wrappers import RecordEpisodeStatistics, TimeLimit
+from stable_baselines3.common.env_util import is_wrapped
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
 from torchvision.transforms import Resize
 
@@ -33,7 +34,7 @@ def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
         env.seed(seed + rank)
         env.action_space.seed(seed + rank)
 
-        if str(env.__class__.__name__).find("TimeLimit") >= 0:
+        if is_wrapped(env, TimeLimit):
             env = TimeLimitMask(env)
 
         # If the input has shape (W,H,3), wrap for PyTorch convolutions
