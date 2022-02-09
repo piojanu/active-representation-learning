@@ -19,6 +19,9 @@ OBS_HEIGHT=64
 
 @hydra.main(config_path='spec', config_name='config')
 def main(cfg):
+    # WA: CUDA out of memory when starting next experiment in the sweep
+    time.sleep(5)
+
     print(OmegaConf.to_yaml(cfg))
 
     torch.manual_seed(cfg.seed)
