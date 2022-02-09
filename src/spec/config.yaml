@@ -14,7 +14,7 @@ hydra:
         exclude_keys:
           - seed
 
-env: 'MiniWorld-PickupObjs-v0'
+env: "MiniWorld-PickupObjs-v0"
 logging:
   log_interval: 10 # Log every N policy iterations
   save_interval: 100 # Save every N policy iterations

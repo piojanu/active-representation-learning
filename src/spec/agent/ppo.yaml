@@ -1,6 +1,6 @@
-algo: 'PPO'
+algo: "PPO"
 loss:
-  clip_ratio_pi: 0.1 # Parameter for clipping the policy objective 
+  clip_ratio_pi: 0.1 # Parameter for clipping the policy objective
   clip_ratio_vf: null # Parameter for clipping the value objective (null to disable)
   entropy_coef: 0.0 # Entropy term coefficient
   value_coef: 0.5 # Value loss coefficient

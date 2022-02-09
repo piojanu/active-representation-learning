@@ -1,10 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-
-from a2c_ppo_acktr.distributions import Bernoulli
-from a2c_ppo_acktr.distributions import Categorical
-from a2c_ppo_acktr.distributions import DiagGaussian
+from a2c_ppo_acktr.distributions import Bernoulli, Categorical, DiagGaussian
 from a2c_ppo_acktr.utils import init
 
 
@@ -79,9 +76,9 @@ class NNBase(nn.Module):
         if recurrent:
             self.gru = nn.GRU(recurrent_input_size, hidden_size)
             for name, param in self.gru.named_parameters():
-                if 'bias' in name:
+                if "bias" in name:
                     nn.init.constant_(param, 0)
-                elif 'weight' in name:
+                elif "weight" in name:
                     nn.init.orthogonal_(param)
 
     @property
@@ -116,11 +113,7 @@ class NNBase(nn.Module):
 
             # Let's figure out which steps in the sequence have a zero for any agent
             # We will always assume t=0 has a zero in it as that makes the logic cleaner
-            has_zeros = ((masks[1:] == 0.0) \
-                            .any(dim=-1)
-                            .nonzero()
-                            .squeeze()
-                            .cpu())
+            has_zeros = (masks[1:] == 0.0).any(dim=-1).nonzero().squeeze().cpu()
 
             # +1 to correct the masks[1:]
             if has_zeros.dim() == 0:
@@ -141,8 +134,8 @@ class NNBase(nn.Module):
                 end_idx = has_zeros[i + 1]
 
                 rnn_scores, hxs = self.gru(
-                    x[start_idx:end_idx],
-                    hxs * masks[start_idx].view(1, -1, 1))
+                    x[start_idx:end_idx], hxs * masks[start_idx].view(1, -1, 1)
+                )
 
                 outputs.append(rnn_scores)
 
@@ -160,26 +153,35 @@ class CNNBase(NNBase):
     def __init__(self, obs_shape, hidden_size=512, recurrent=False):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
-        init_relu = lambda m: init(m,
-                                   nn.init.orthogonal_,
-                                   lambda x: nn.init.constant_(x, 0),
-                                   nn.init.calculate_gain('relu'))
+        # trunk-ignore(flake8/E731)
+        init_relu = lambda m: init(
+            m,
+            nn.init.orthogonal_,
+            lambda x: nn.init.constant_(x, 0),
+            nn.init.calculate_gain("relu"),
+        )
 
         conv_net = nn.Sequential(
-            init_relu(nn.Conv2d(obs_shape[0], 32, 4, stride=2)), nn.ReLU(),
-            init_relu(nn.Conv2d(32, 64, 4, stride=2)), nn.ReLU(),
-            init_relu(nn.Conv2d(64, 64, 4, stride=1)), nn.ReLU()
+            init_relu(nn.Conv2d(obs_shape[0], 32, 4, stride=2)),
+            nn.ReLU(),
+            init_relu(nn.Conv2d(32, 64, 4, stride=2)),
+            nn.ReLU(),
+            init_relu(nn.Conv2d(64, 64, 4, stride=1)),
+            nn.ReLU(),
         )
         n_features = np.prod(conv_net(torch.randn(1, *obs_shape)).shape)
 
         self.body = nn.Sequential(
-            conv_net, nn.Flatten(),
-            init_relu(nn.Linear(n_features, hidden_size)), nn.Tanh()
+            conv_net,
+            nn.Flatten(),
+            init_relu(nn.Linear(n_features, hidden_size)),
+            nn.Tanh(),
         )
 
-        init_identity = lambda m: init(m,
-                                       nn.init.orthogonal_,
-                                       lambda x: nn.init.constant_(x, 0))
+        # trunk-ignore(flake8/E731)
+        init_identity = lambda m: init(
+            m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0)
+        )
 
         self.critic_linear = init_identity(nn.Linear(hidden_size, 1))
 
@@ -203,18 +205,24 @@ class MLPBase(NNBase):
         else:
             num_inputs = obs_shape[0]
 
-        init_ = lambda m: init(m,
-                               nn.init.orthogonal_,
-                               lambda x: nn.init.constant_(x, 0),
-                               np.sqrt(2))
+        # trunk-ignore(flake8/E731)
+        init_ = lambda m: init(
+            m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2)
+        )
 
         self.actor = nn.Sequential(
-            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+            init_(nn.Linear(num_inputs, hidden_size)),
+            nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)),
+            nn.Tanh(),
+        )
 
         self.critic = nn.Sequential(
-            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+            init_(nn.Linear(num_inputs, hidden_size)),
+            nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)),
+            nn.Tanh(),
+        )
 
         self.critic_linear = init_(nn.Linear(hidden_size, 1))
 
