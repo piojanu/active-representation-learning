@@ -8,3 +8,8 @@ lint:
     - gitleaks@7.6.1
     - isort@5.9.3
     - prettier@2.4.1
+  ignore:
+    - linters: [ALL]
+      paths:
+        # Generated files
+        - etc/**

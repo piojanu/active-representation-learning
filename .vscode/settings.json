@@ -1,7 +1,3 @@
 {
-    "python.terminal.launchArgs": [
-        "-m",
-        "IPython",
-        "--no-autoindent",
-    ],
+  "python.terminal.launchArgs": ["-m", "IPython", "--no-autoindent"]
 }
