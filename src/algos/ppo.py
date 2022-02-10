@@ -3,8 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from utils.logx import InfoLogger
 
-class PPO:
+
+class PPO(InfoLogger):
     def __init__(
         self,
         actor_critic,

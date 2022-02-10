@@ -8,9 +8,16 @@ import torch
 from gym.wrappers import RecordEpisodeStatistics
 from omegaconf import OmegaConf
 
+from algos.dummy import DummyAgent
 from algos.ppo import PPO
 from envs import EpisodeInfoLogger, make_vec_env
 from models.actor_critic import ActorCritic
+from models.baselines import (
+    ConstantActorCritic,
+    DummyActorCritic,
+    RandomActorCritic,
+    RandomRepeatActorCritic,
+)
 from utils.logx import EpochLogger
 from utils.namesgenerator import get_random_name
 from utils.storage import RolloutStorage
@@ -49,27 +56,40 @@ def main(cfg):
     if all(env.env_is_wrapped(TrainSimCLR)):
         env_info_loggers.append(TrainSimCLR)
 
-    actor_critic = ActorCritic(
-        env.observation_space.shape,
-        env.action_space,
-        hidden_size=cfg.agent.model.hidden_size,
-        recurrent=cfg.agent.model.recurrent,
-    )
-    actor_critic.to(device)
+    if cfg.agent.algo.lower() == "ppo":
+        actor_critic = ActorCritic(
+            env.observation_space.shape,
+            env.action_space,
+            hidden_size=cfg.agent.model.hidden_size,
+            recurrent=cfg.agent.model.recurrent,
+        )
+        actor_critic.to(device)
 
-    assert cfg.agent.algo.lower() == "ppo", "Only the PPO agent is supported"
-    agent = PPO(
-        actor_critic,
-        cfg.agent.loss.clip_ratio_pi,
-        cfg.agent.loss.clip_ratio_vf,
-        cfg.agent.loss.entropy_coef,
-        cfg.agent.loss.value_coef,
-        cfg.agent.training.learning_rate,
-        cfg.agent.training.num_epochs,
-        cfg.agent.training.max_grad_norm,
-        cfg.agent.training.max_kl,
-        cfg.agent.training.mini_batch_size,
-    )
+        agent = PPO(
+            actor_critic,
+            cfg.agent.loss.clip_ratio_pi,
+            cfg.agent.loss.clip_ratio_vf,
+            cfg.agent.loss.entropy_coef,
+            cfg.agent.loss.value_coef,
+            cfg.agent.training.learning_rate,
+            cfg.agent.training.num_epochs,
+            cfg.agent.training.max_grad_norm,
+            cfg.agent.training.max_kl,
+            cfg.agent.training.mini_batch_size,
+        )
+    elif cfg.agent.algo.lower() == "constant":
+        actor_critic = ConstantActorCritic(env.action_space, cfg.agent.action)
+        agent = DummyAgent()
+    elif cfg.agent.algo.lower() == "random":
+        actor_critic = RandomActorCritic(env.action_space)
+        agent = DummyAgent()
+    elif cfg.agent.algo.lower() == "randomrepeat":
+        actor_critic = RandomRepeatActorCritic(
+            env.action_space, cfg.agent.min_repeat, cfg.agent.max_repeat
+        )
+        agent = DummyAgent()
+    else:
+        raise KeyError(f"Algorithm {cfg.agent.algo} not supported")
 
     local_num_steps = cfg.training.num_steps // cfg.training.num_processes
     rollouts = RolloutStorage(
@@ -144,7 +164,9 @@ def main(cfg):
         info = agent.update(rollouts)
         agent.log_info(logger, info)
 
-        if (itr + 1) % cfg.logging.save_interval == 0 or itr == num_iterations - 1:
+        if not isinstance(actor_critic, DummyActorCritic) and (
+            (itr + 1) % cfg.logging.save_interval == 0 or itr == num_iterations - 1
+        ):
             ckpt_dir = "./checkpoints"
             weights_dir = osp.join(ckpt_dir, "weights")
             os.makedirs(ckpt_dir, exist_ok=True)
