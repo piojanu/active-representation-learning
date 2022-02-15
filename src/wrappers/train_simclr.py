@@ -18,6 +18,7 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         batch_size,
         learning_rate,
         mixing_coef,
+        num_updates,
         projection_dim,
         temperature,
     ):
@@ -25,6 +26,7 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
 
         self.batch_size = batch_size
         self.mixing_coef = mixing_coef
+        self.num_updates = num_updates
 
         self.device = torch.device(device_name)
         self.buffer = torch.zeros(self.batch_size, *self.observation_space.shape).to(
@@ -83,26 +85,33 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
 
-        self.buffer[self.ptr].copy_(torch.from_numpy(obs))
-        self.ptr += 1
+        if self.ptr < self.batch_size:
+            self.buffer[self.ptr].copy_(torch.from_numpy(obs))
+            self.ptr += 1
 
-        if self.ptr == self.batch_size:
+            rew = (1 - self.mixing_coef) * rew
+        else:
+            # Collect
+            ptr = torch.randint(self.batch_size, size=(1,))
+            self.buffer[ptr].copy_(torch.from_numpy(obs))
+
+            # Train
             x_i, x_j = self.transform_batch(self.buffer)
-
-            self.optimizer.zero_grad()
             loss = self.compute_loss(x_i, x_j)
-            loss.backward()
-            self.optimizer.step()
+            for _ in range(0, self.num_updates):
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
-            info["LossEncoder"] = loss.item()
-            self.ptr = 0
+                # TODO: Can we use the loss before the update as the reward signal?
+                x_i, x_j = self.transform_batch(self.buffer)
+                loss = self.compute_loss(x_i, x_j)
 
             with torch.no_grad():
                 rew = (1 - self.mixing_coef) * rew + self.mixing_coef * (
                     5.0 - loss.item()
                 )
-        else:
-            rew = (1 - self.mixing_coef) * rew
+                info["LossEncoder"] = loss.item()
 
         return obs, rew, done, info
 
