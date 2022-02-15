@@ -7,32 +7,32 @@ from gym_miniworld.miniworld import MiniWorldEnv
 
 class Barrel(MeshEnt):
     def __init__(self, size=0.6):
-        super().__init__(mesh_name="barrel", height=size, static=False)
+        super().__init__(mesh_name="barrel", height=size, static=True)
 
 
 class Cone(MeshEnt):
     def __init__(self, size=0.6):
-        super().__init__(mesh_name="cone", height=size, static=False)
+        super().__init__(mesh_name="cone", height=size, static=True)
 
 
 class Duckie(MeshEnt):
     def __init__(self, size=0.6):
-        super().__init__(mesh_name="duckie", height=size, static=False)
+        super().__init__(mesh_name="duckie", height=size, static=True)
 
 
 class KeyCard(MeshEnt):
     def __init__(self, size=0.6):
-        super().__init__(mesh_name="keycard", height=size, static=False)
+        super().__init__(mesh_name="keycard", height=size, static=True)
 
 
 class MedKit(MeshEnt):
     def __init__(self, size=0.6):
-        super().__init__(mesh_name="medkit", height=size, static=False)
+        super().__init__(mesh_name="medkit", height=size, static=True)
 
 
 class Potion(MeshEnt):
     def __init__(self, size=0.6):
-        super().__init__(mesh_name="potion", height=size, static=False)
+        super().__init__(mesh_name="potion", height=size, static=True)
 
 
 class LookAtObjs(MiniWorldEnv):
@@ -45,7 +45,7 @@ class LookAtObjs(MiniWorldEnv):
         self.num_objs = num_objs
         self.revolution_step = (2 * math.pi) / self.num_objs
 
-        super().__init__(max_episode_steps=math.inf, **kwargs)
+        super().__init__(max_episode_steps=50, **kwargs)
 
         # Reduce the action space
         self.action_space = spaces.Discrete(self.actions.turn_right + 1)
