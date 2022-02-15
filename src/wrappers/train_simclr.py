@@ -68,10 +68,11 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
 
     def transform_batch(self, batch):
-        # WA: Call `.contiguous()` to prevent "[...] grad and param do not
-        #     obey the gradient layout contract [...]".
-        x_i = self.scripted_transforms(batch).contiguous()
-        x_j = self.scripted_transforms(batch).contiguous()
+        x_i = torch.empty_like(batch)
+        x_j = torch.empty_like(batch)
+        for idx in range(0, batch.shape[0]):
+            x_i[idx] = self.scripted_transforms(batch[idx])
+            x_j[idx] = self.scripted_transforms(batch[idx])
 
         return x_i, x_j
 
