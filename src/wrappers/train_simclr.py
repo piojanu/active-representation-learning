@@ -32,7 +32,9 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         self.buffer = torch.zeros(self.batch_size, *self.observation_space.shape).to(
             self.device
         )
-        self.ptr = 0
+
+        self.counter = 0
+        self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
 
         # Create SimCLR transformation
         transforms = torch.nn.Sequential(
@@ -86,21 +88,19 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
 
-        if self.ptr < self.batch_size:
-            self.buffer[self.ptr].copy_(torch.from_numpy(obs))
-            self.ptr += 1
-
+        if self.counter < self.batch_size:
+            self.buffer[self.counter].copy_(torch.from_numpy(obs))
             mix_rew = 0.0
         else:
-            # Collect
+            # Replace a random batch's element with the observation
             ptr = torch.randint(self.batch_size, size=(1,))
             self.buffer[ptr].copy_(torch.from_numpy(obs))
 
-            # Train
+            # Run fractional, only one, or multiple SimCLR updates
             num_updates = (
                 self.num_updates
                 if self.num_updates >= 1
-                else int(torch.rand(1) < self.num_updates)
+                else int((self.counter - self.batch_size) % self.update_every == 0)
             )
             for _ in range(0, num_updates):
                 # TODO: Should we use the loss after the update as the reward signal?
@@ -111,14 +111,15 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
                 loss.backward()
                 self.optimizer.step()
 
+            # Mix the loss in if updated SimCLR
             if num_updates > 0:
                 with torch.no_grad():
                     mix_rew = self.mixing_coef * (5.0 - loss.item())
-
-                info["LossEncoder"] = loss.item()
+                    info["LossEncoder"] = loss.item()
             else:
                 mix_rew = 0.0
 
+        self.counter += 1
         mix_rew += (1 - self.mixing_coef) * rew
 
         return obs, mix_rew, done, info
