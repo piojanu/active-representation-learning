@@ -43,7 +43,7 @@ def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
             env = TransposeImage(env, op=[2, 0, 1])
 
         if len(encoder_kwargs) > 0:
-            env = TrainSimCLR(env, _get_device_name(rank), **encoder_kwargs)
+            env = TrainSimCLR(env, rank, _get_device_name(rank), **encoder_kwargs)
         else:
             env = RecordEpisodeStatistics(env)
 

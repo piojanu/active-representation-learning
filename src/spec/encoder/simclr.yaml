@@ -3,4 +3,5 @@ learning_rate: 3e-4
 mixing_coef: 1.0
 num_updates: 0.1
 projection_dim: 64
+save_interval: 1000 # Save every N updates
 temperature: 0.5

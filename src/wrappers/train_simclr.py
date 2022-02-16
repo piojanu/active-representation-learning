@@ -1,3 +1,5 @@
+import os.path as osp
+
 import gym
 import torch
 import torchvision
@@ -14,12 +16,14 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
     def __init__(
         self,
         env,
+        rank,
         device_name,
         batch_size,
         learning_rate,
         mixing_coef,
         num_updates,
         projection_dim,
+        save_interval,
         temperature,
     ):
         super().__init__(env)
@@ -27,13 +31,16 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         self.batch_size = batch_size
         self.mixing_coef = mixing_coef
         self.num_updates = num_updates
+        self.save_interval = save_interval
 
         self.device = torch.device(device_name)
         self.buffer = torch.zeros(self.batch_size, *self.observation_space.shape).to(
             self.device
         )
 
+        self.ckpt_dir = osp.join("./checkpoints", f"encoder_{rank}")
         self.counter = 0
+        self.total_updates = 0
         self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
 
         # Create SimCLR transformation
@@ -110,6 +117,7 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+            self.total_updates += num_updates
 
             # Mix the loss in if updated SimCLR
             if num_updates > 0:
@@ -118,6 +126,21 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
                     info["LossEncoder"] = loss.item()
             else:
                 mix_rew = 0.0
+
+            # Checkpoint
+            if self.total_updates % self.save_interval == 0:
+                torch.save(
+                    [
+                        self.encoder,
+                        self.model.projector,
+                        self.optimizer.state_dict(),
+                    ],
+                    osp.join(self.ckpt_dir, "checkpoint.pkl"),
+                )
+                torch.save(
+                    [self.encoder.state_dict(), self.model.projector.state_dict()],
+                    osp.join(self.ckpt_dir, f"{self.total_updates}.pt"),
+                )
 
         self.counter += 1
         mix_rew += (1 - self.mixing_coef) * rew
