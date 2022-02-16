@@ -90,31 +90,38 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
             self.buffer[self.ptr].copy_(torch.from_numpy(obs))
             self.ptr += 1
 
-            rew = (1 - self.mixing_coef) * rew
+            mix_rew = 0.0
         else:
             # Collect
             ptr = torch.randint(self.batch_size, size=(1,))
             self.buffer[ptr].copy_(torch.from_numpy(obs))
 
             # Train
-            x_i, x_j = self.transform_batch(self.buffer)
-            loss = self.compute_loss(x_i, x_j)
-            for _ in range(0, self.num_updates):
+            num_updates = (
+                self.num_updates
+                if self.num_updates >= 1
+                else int(torch.rand(1) < self.num_updates)
+            )
+            for _ in range(0, num_updates):
+                # TODO: Should we use the loss after the update as the reward signal?
+                x_i, x_j = self.transform_batch(self.buffer)
+                loss = self.compute_loss(x_i, x_j)
+
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
-                # TODO: Can we use the loss before the update as the reward signal?
-                x_i, x_j = self.transform_batch(self.buffer)
-                loss = self.compute_loss(x_i, x_j)
+            if num_updates > 0:
+                with torch.no_grad():
+                    mix_rew = self.mixing_coef * (5.0 - loss.item())
 
-            with torch.no_grad():
-                rew = (1 - self.mixing_coef) * rew + self.mixing_coef * (
-                    5.0 - loss.item()
-                )
                 info["LossEncoder"] = loss.item()
+            else:
+                mix_rew = 0.0
 
-        return obs, rew, done, info
+        mix_rew += (1 - self.mixing_coef) * rew
+
+        return obs, mix_rew, done, info
 
     @staticmethod
     def log_info(logger, info):

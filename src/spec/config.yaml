@@ -16,8 +16,8 @@ hydra:
 
 env: "MiniWorld-LookAtObjs-v0"
 logging:
-  log_interval: 10 # Log every N policy iterations
-  save_interval: 100 # Save every N policy iterations
+  log_interval: 5 # Log every N policy iterations
+  save_interval: 50 # Save every N policy iterations
 rollout:
   bootstrap_value_at_time_limit: False
   force_non_episodic: True # Force the advantage calculation as if the env. was non-episodic
@@ -28,4 +28,4 @@ training:
   cuda: True
   num_processes: 8 # How many CPU processes to use for data collection
   num_steps: 2048 # Number of environment interactions before policy improvement
-  total_steps: 2e6 # Total environment interactions throughout training
+  total_steps: 1e6 # Total environment interactions throughout training
