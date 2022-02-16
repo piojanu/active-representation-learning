@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 
 import gym
@@ -38,10 +39,12 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
             self.device
         )
 
-        self.ckpt_dir = osp.join("./checkpoints", f"encoder_{rank}")
         self.counter = 0
         self.total_updates = 0
         self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
+
+        self.ckpt_dir = osp.join("./checkpoints", f"encoder_{rank}")
+        os.makedirs(self.ckpt_dir)
 
         # Create SimCLR transformation
         transforms = torch.nn.Sequential(

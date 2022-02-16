@@ -40,6 +40,11 @@ def main(cfg):
 
     device = torch.device("cuda:0" if cfg.training.cuda else "cpu")
 
+    ckpt_dir = "./checkpoints"
+    weights_dir = osp.join(ckpt_dir, "weights")
+    os.makedirs(ckpt_dir)
+    os.makedirs(weights_dir)
+
     env = make_vec_env(
         cfg.env,
         cfg.training.num_processes,
@@ -167,10 +172,6 @@ def main(cfg):
         if not isinstance(actor_critic, DummyActorCritic) and (
             (itr + 1) % cfg.logging.save_interval == 0 or itr == num_iterations - 1
         ):
-            ckpt_dir = "./checkpoints"
-            weights_dir = osp.join(ckpt_dir, "weights")
-            os.makedirs(ckpt_dir, exist_ok=True)
-            os.makedirs(weights_dir, exist_ok=True)
             torch.save(
                 [
                     actor_critic,
