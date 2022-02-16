@@ -225,9 +225,28 @@ if __name__ == "__main__":
     except ValueError:
         is_mock = False
 
-    # Get and register this run name
-    run_name = get_random_name() if not is_mock else "mock"
+    try:
+        idx = sys.argv.index("--resume")
+        resume_name = sys.argv[idx + 1]
+
+        # Remove the argument
+        del sys.argv[idx]
+        # Remove its value
+        del sys.argv[idx]
+    except ValueError:
+        resume_name = None
+
+    # Get the run name
+    if is_mock:
+        run_name = "mock"
+    elif resume_name is not None:
+        run_name = resume_name
+    else:
+        run_name = get_random_name()
+
+    # Register the name
     OmegaConf.register_new_resolver("run_name", lambda: run_name)
     print(f'This run name is "{run_name}", good luck!')
 
+    # Run!
     main()
