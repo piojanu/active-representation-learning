@@ -10,6 +10,11 @@ class Barrel(MeshEnt):
         super().__init__(mesh_name="barrel", height=size, static=True)
 
 
+class Chair(MeshEnt):
+    def __init__(self, size=0.6):
+        super().__init__(mesh_name="office_chair", height=size, static=True)
+
+
 class Cone(MeshEnt):
     def __init__(self, size=0.6):
         super().__init__(mesh_name="cone", height=size, static=True)
@@ -62,7 +67,7 @@ class LookAtObjs(MiniWorldEnv):
         )
 
         objs_type = self.rand.subset(
-            [Ball, Barrel, Box, Cone, Duckie, Key, KeyCard, MedKit, Potion],
+            [Ball, Barrel, Box, Chair, Cone, Duckie, Key, KeyCard, MedKit, Potion],
             self.num_objs,
         )
         for i, obj_type in enumerate(objs_type):
