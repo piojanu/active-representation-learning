@@ -45,7 +45,7 @@ class LookAtObjs(MiniWorldEnv):
         self.num_objs = num_objs
         self.revolution_step = (2 * math.pi) / self.num_objs
 
-        super().__init__(max_episode_steps=50, **kwargs)
+        super().__init__(max_episode_steps=math.inf, **kwargs)
 
         # Reduce the action space
         self.action_space = spaces.Discrete(self.actions.turn_right + 1)
