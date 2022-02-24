@@ -19,8 +19,9 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         env,
         rank,
         device_name,
-        batch_size,
+        buffer_size,
         learning_rate,
+        mini_batch_size,
         mixing_coef,
         num_updates,
         projection_dim,
@@ -29,13 +30,14 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
     ):
         super().__init__(env)
 
-        self.batch_size = batch_size
+        self.buffer_size = buffer_size
+        self.mini_batch_size = mini_batch_size
         self.mixing_coef = mixing_coef
         self.num_updates = num_updates
         self.save_interval = save_interval
 
         self.device = torch.device(device_name)
-        self.buffer = torch.zeros(self.batch_size, *self.observation_space.shape).to(
+        self.buffer = torch.zeros(self.buffer_size, *self.observation_space.shape).to(
             self.device
         )
 
@@ -74,7 +76,7 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         self.model.to(self.device)
 
         # Create SimCLR criterion
-        self.criterion = NT_Xent(batch_size, temperature, world_size=1)
+        self.criterion = NT_Xent(self.mini_batch_size, temperature, world_size=1)
 
         # Create Adam optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -115,23 +117,27 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
 
-        if self.counter < self.batch_size:
+        if self.counter < self.buffer_size:
             self.buffer[self.counter].copy_(torch.from_numpy(obs))
             mix_rew = 0.0
         else:
-            # Replace a random batch's element with the observation
-            ptr = torch.randint(self.batch_size, size=(1,))
+            # Replace a random buffer's element with the observation
+            ptr = torch.randint(self.buffer_size, size=(1,))
             self.buffer[ptr].copy_(torch.from_numpy(obs))
 
             # Run fractional, only one, or multiple SimCLR updates
             num_updates = (
                 self.num_updates
                 if self.num_updates >= 1
-                else int((self.counter - self.batch_size) % self.update_every == 0)
+                else int((self.counter - self.buffer_size) % self.update_every == 0)
             )
             for _ in range(0, num_updates):
+                # Sample mini batch
+                idxs = torch.randint(self.buffer_size, size=(self.mini_batch_size,))
+                mini_batch = self.buffer[idxs]
+
                 # TODO: Should we use the loss after the update as the reward signal?
-                x_i, x_j = self.transform_batch(self.buffer)
+                x_i, x_j = self.transform_batch(mini_batch)
                 loss = self.compute_loss(x_i, x_j)
 
                 self.optimizer.zero_grad()
