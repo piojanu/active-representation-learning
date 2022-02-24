@@ -1,0 +1,5 @@
+# @package _global_
+
+training:
+  cuda: False
+  num_processes: 4
