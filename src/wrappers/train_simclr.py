@@ -79,6 +79,23 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         # Create Adam optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
 
+        # Save checkpoint at step zero
+        self.save_checkpoint()
+
+    def save_checkpoint(self):
+        torch.save(
+            [
+                self.encoder,
+                self.model.projector,
+                self.optimizer.state_dict(),
+            ],
+            osp.join(self.ckpt_dir, "checkpoint.pkl"),
+        )
+        torch.save(
+            [self.encoder.state_dict(), self.model.projector.state_dict()],
+            osp.join(self.ckpt_dir, f"{self.total_updates}.pt"),
+        )
+
     def transform_batch(self, batch):
         x_i = torch.empty_like(batch)
         x_j = torch.empty_like(batch)
@@ -132,18 +149,7 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
 
             # Checkpoint
             if self.total_updates % self.save_interval == 0:
-                torch.save(
-                    [
-                        self.encoder,
-                        self.model.projector,
-                        self.optimizer.state_dict(),
-                    ],
-                    osp.join(self.ckpt_dir, "checkpoint.pkl"),
-                )
-                torch.save(
-                    [self.encoder.state_dict(), self.model.projector.state_dict()],
-                    osp.join(self.ckpt_dir, f"{self.total_updates}.pt"),
-                )
+                self.save_checkpoint()
 
         self.counter += 1
         mix_rew += (1 - self.mixing_coef) * rew
