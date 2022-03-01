@@ -1,3 +1,6 @@
+defaults:
+  - base
+
 algo: "PPO"
 loss:
   clip_ratio_pi: 0.1 # Parameter for clipping the policy objective

@@ -14,7 +14,7 @@ from utils.logx import InfoLogger
 from wrappers import TrainSimCLR
 
 
-def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
+def make_env(env_name, rank, seed, encoder_cfg, gym_kwargs):
     def _get_device_name(rank):
         if torch.cuda.is_available():
             if torch.cuda.device_count() == 1:
@@ -34,6 +34,7 @@ def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
         env.seed(seed + rank)
         env.action_space.seed(seed + rank)
 
+        env = RecordEpisodeStatistics(env)
         if is_wrapped(env, TimeLimit):
             env = TimeLimitMask(env)
 
@@ -42,10 +43,23 @@ def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
         if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
             env = TransposeImage(env, op=[2, 0, 1])
 
-        if len(encoder_kwargs) > 0:
-            env = TrainSimCLR(env, rank, _get_device_name(rank), **encoder_kwargs)
+        if encoder_cfg.algo.lower() == "simclr":
+            env = TrainSimCLR(
+                env,
+                rank,
+                _get_device_name(rank),
+                buffer_size=encoder_cfg.buffer_size,
+                learning_rate=encoder_cfg.learning_rate,
+                mini_batch_size=encoder_cfg.mini_batch_size,
+                mixing_coef=encoder_cfg.mixing_coef,
+                num_updates=encoder_cfg.num_updates,
+                projection_dim=encoder_cfg.projection_dim,
+                save_interval=encoder_cfg.logging.save_interval,
+                temperature=encoder_cfg.temperature,
+            )
         else:
-            env = RecordEpisodeStatistics(env)
+            if encoder_cfg.algo.lower() != "dummy":
+                raise KeyError(f"Encoder {encoder_cfg.algo} not supported")
 
         return env
 
@@ -53,17 +67,17 @@ def make_env(env_name, rank, seed, encoder_kwargs, gym_kwargs):
 
 
 def make_vec_env(
-    env_name, num_processes, device, seed, agent_obs_size, encoder_kwargs, gym_kwargs
+    env_name, num_processes, device, seed, agent_obs_size, encoder_cfg, gym_kwargs
 ):
     if num_processes > 1:
         env = SubprocVecEnv(
             [
-                make_env(env_name, idx, seed, encoder_kwargs, gym_kwargs)
+                make_env(env_name, idx, seed, encoder_cfg, gym_kwargs)
                 for idx in range(num_processes)
             ]
         )
     else:
-        env = DummyVecEnv([make_env(env_name, 0, seed, encoder_kwargs, gym_kwargs)])
+        env = DummyVecEnv([make_env(env_name, 0, seed, encoder_cfg, gym_kwargs)])
     env = PyTorchToDevice(env, device)
     env = PyTorchResizeObs(env, agent_obs_size)
 

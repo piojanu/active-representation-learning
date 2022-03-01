@@ -1,2 +1,5 @@
+defaults:
+  - base
+
 algo: "Constant"
 action: null

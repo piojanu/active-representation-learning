@@ -1,0 +1,3 @@
+logging:
+  log_interval: 10 # Log every N updates
+  save_interval: 10 # Save every N updates

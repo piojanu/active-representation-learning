@@ -1,8 +1,11 @@
+defaults:
+  - base
+
+algo: "SimCLR"
 buffer_size: 128
 learning_rate: 3e-4
 mini_batch_size: 64
 mixing_coef: 1.0
 num_updates: 1
 projection_dim: 64
-save_interval: 10 # Save every N updates
 temperature: 0.5

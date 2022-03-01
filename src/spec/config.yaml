@@ -15,9 +15,6 @@ hydra:
           - seed
 
 env: "MiniWorld-LookAtObjs-v0"
-logging:
-  log_interval: 5 # Log every N policy iterations
-  save_interval: 50 # Save every N policy iterations
 rollout:
   bootstrap_value_at_time_limit: False
   force_non_episodic: True # Force the advantage calculation as if the env. was non-episodic

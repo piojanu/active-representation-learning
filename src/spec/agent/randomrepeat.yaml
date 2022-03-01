@@ -1,3 +1,6 @@
+defaults:
+  - base
+
 algo: "RandomRepeat"
 min_repeat: 5
 max_repeat: 10

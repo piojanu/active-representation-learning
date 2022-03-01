@@ -51,7 +51,7 @@ def main(cfg):
         device=device,
         seed=cfg.seed,
         agent_obs_size=(26, 26),
-        encoder_kwargs=cfg.encoder,
+        encoder_cfg=cfg.encoder,
         gym_kwargs=dict(obs_width=OBS_WIDTH, obs_height=OBS_HEIGHT),
     )
 
@@ -94,7 +94,7 @@ def main(cfg):
         )
         agent = DummyAgent()
     else:
-        raise KeyError(f"Algorithm {cfg.agent.algo} not supported")
+        raise KeyError(f"Agent {cfg.agent.algo} not supported")
 
     local_num_steps = cfg.training.num_steps // cfg.training.num_processes
     rollouts = RolloutStorage(
@@ -170,7 +170,7 @@ def main(cfg):
         agent.log_info(logger, info)
 
         if not isinstance(actor_critic, DummyActorCritic) and (
-            (itr + 1) % cfg.logging.save_interval == 0 or itr == num_iterations - 1
+            (itr + 1) % cfg.agent.logging.save_interval == 0 or itr == num_iterations - 1
         ):
             torch.save(
                 [
@@ -183,8 +183,8 @@ def main(cfg):
                 actor_critic.state_dict(), osp.join(weights_dir, f"{itr + 1}.pt")
             )
 
-        if (itr + 1) % cfg.logging.log_interval == 0:
-            last_num_steps = cfg.logging.log_interval * cfg.training.num_steps
+        if (itr + 1) % cfg.agent.logging.log_interval == 0:
+            last_num_steps = cfg.agent.logging.log_interval * cfg.training.num_steps
 
             for info_logger in env_info_loggers:
                 info_logger.compute_stats(logger)
@@ -196,7 +196,7 @@ def main(cfg):
                 "ETAinMins",
                 (
                     (time.time() - start_time)
-                    / cfg.logging.log_interval
+                    / cfg.agent.logging.log_interval
                     * (num_iterations - itr - 1)
                     // 60
                 ),
@@ -204,7 +204,7 @@ def main(cfg):
 
             start_time = time.time()
 
-        if (itr + 1) % cfg.logging.log_interval == 0 or itr == num_iterations - 1:
+        if (itr + 1) % cfg.agent.logging.log_interval == 0 or itr == num_iterations - 1:
             # Record the last iteration rollouts
             logger.writer.add_video(
                 "RolloutsBuffer",
