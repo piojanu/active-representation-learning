@@ -1,0 +1,35 @@
+# @package _global_
+defaults:
+  - override /agent: ppo
+  - override /encoder: dummy
+
+agent:
+  logging:
+    log_interval: 10
+    save_interval: 100
+  loss:
+    clip_ratio_pi: 0.1
+    clip_ratio_vf: null
+    entropy_coef: 0.0
+    value_coef: 0.5
+  model:
+    recurrent: true
+    hidden_size: 256
+  training:
+    learning_rate: 3e-4
+    num_epochs: 10
+    max_grad_norm: 0.5
+    max_kl: 0.015
+    mini_batch_size: 256
+env: MiniWorld-PickupObjs-v0
+rollout:
+  bootstrap_value_at_time_limit: False
+  force_non_episodic: False
+  gae_lambda: 0.95
+  gamma: 0.99
+seed: 42
+training:
+  cuda: true
+  num_processes: 32
+  num_steps: 2048
+  total_steps: 2097152 # 2 * 1024^2
