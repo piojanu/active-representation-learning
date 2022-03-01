@@ -96,7 +96,19 @@ def main(cfg):
     else:
         raise KeyError(f"Agent {cfg.agent.algo} not supported")
 
-    local_num_steps = cfg.training.num_steps // cfg.training.num_processes
+    local_num_steps = int(cfg.training.num_steps // cfg.training.num_processes)
+    local_total_steps = int(cfg.training.total_steps // cfg.training.num_processes)
+    local_save_interval = int(
+        cfg.agent.logging.save_interval
+        * cfg.training.num_steps
+        // cfg.training.num_processes
+    )
+    local_log_interval = int(
+        cfg.agent.logging.log_interval
+        * cfg.training.num_steps
+        // cfg.training.num_processes
+    )
+
     rollouts = RolloutStorage(
         local_num_steps,
         cfg.training.num_processes,
@@ -110,68 +122,68 @@ def main(cfg):
 
     logger = EpochLogger()
 
-    num_iterations = int(cfg.training.total_steps // cfg.training.num_steps)
     start_time = time.time()
-    for itr in range(num_iterations):
-        for step in range(local_num_steps):
-            # Sample actions
-            with torch.no_grad():
-                (
-                    value,
-                    action,
-                    action_log_prob,
-                    recurrent_hidden_states,
-                ) = actor_critic.act(
-                    rollouts.obs[step],
-                    rollouts.recurrent_hidden_states[step],
-                    rollouts.non_terminal_masks[step],
-                )
-
-            # Observe reward and next obs
-            obs, reward, done, infos = env.step(action)
-            for info in infos:
-                for info_logger in env_info_loggers:
-                    info_logger.log_info(logger, info)
-
-            # If done then clean the history of observations.
-            non_terminal_masks = torch.FloatTensor(
-                [[1.0] if not done_ else [0.0] for done_ in done]
-            )
-            bad_masks = torch.FloatTensor(
-                [[1.0] if "bad_transition" in info.keys() else [0.0] for info in infos]
-            )
-            rollouts.insert(
-                obs,
-                recurrent_hidden_states,
+    for local_step in range(local_total_steps):
+        # Sample actions
+        with torch.no_grad():
+            (
+                value,
                 action,
                 action_log_prob,
-                value,
-                reward,
-                non_terminal_masks,
-                bad_masks,
+                recurrent_hidden_states,
+            ) = actor_critic.act(
+                rollouts.obs[local_step % local_num_steps],
+                rollouts.recurrent_hidden_states[local_step % local_num_steps],
+                rollouts.non_terminal_masks[local_step % local_num_steps],
             )
 
-        with torch.no_grad():
-            last_value = actor_critic.get_value(
-                rollouts.obs[-1],
-                rollouts.recurrent_hidden_states[-1],
-                rollouts.non_terminal_masks[-1],
-            ).detach()
+        # Observe reward and next obs
+        obs, reward, done, infos = env.step(action)
+        for info in infos:
+            for info_logger in env_info_loggers:
+                info_logger.log_info(logger, info)
 
-        rollouts.compute_returns(
-            last_value,
-            cfg.rollout.gae_lambda,
-            cfg.rollout.gamma,
-            cfg.rollout.bootstrap_value_at_time_limit,
-            cfg.rollout.force_non_episodic,
+        # If done then clean the history of observations.
+        non_terminal_masks = torch.FloatTensor(
+            [[1.0] if not done_ else [0.0] for done_ in done]
+        )
+        bad_masks = torch.FloatTensor(
+            [[1.0] if "bad_transition" in info.keys() else [0.0] for info in infos]
+        )
+        rollouts.insert(
+            obs,
+            recurrent_hidden_states,
+            action,
+            action_log_prob,
+            value,
+            reward,
+            non_terminal_masks,
+            bad_masks,
         )
 
-        info = agent.update(rollouts)
-        agent.log_info(logger, info)
+        # If it's time to train...
+        if (local_step + 1) % local_num_steps == 0:
+            with torch.no_grad():
+                last_value = actor_critic.get_value(
+                    rollouts.obs[-1],
+                    rollouts.recurrent_hidden_states[-1],
+                    rollouts.non_terminal_masks[-1],
+                ).detach()
 
-        if not isinstance(actor_critic, DummyActorCritic) and (
-            (itr + 1) % cfg.agent.logging.save_interval == 0
-            or itr == num_iterations - 1
+            rollouts.compute_returns(
+                last_value,
+                cfg.rollout.gae_lambda,
+                cfg.rollout.gamma,
+                cfg.rollout.bootstrap_value_at_time_limit,
+                cfg.rollout.force_non_episodic,
+            )
+
+            info = agent.update(rollouts)
+            agent.log_info(logger, info)
+
+        if (
+            not isinstance(actor_critic, DummyActorCritic)
+            and (local_step + 1) % local_save_interval == 0
         ):
             torch.save(
                 [
@@ -181,43 +193,49 @@ def main(cfg):
                 osp.join(ckpt_dir, "model.pkl"),
             )
             torch.save(
-                actor_critic.state_dict(), osp.join(weights_dir, f"{itr + 1}.pt")
-            )
-
-        if (itr + 1) % cfg.agent.logging.log_interval == 0:
-            last_num_steps = cfg.agent.logging.log_interval * cfg.training.num_steps
-
-            for info_logger in env_info_loggers:
-                info_logger.compute_stats(logger)
-            agent.compute_stats(logger)
-            logger.log_tabular(
-                "StepsPerSecond", last_num_steps / (time.time() - start_time)
-            )
-            logger.log_tabular(
-                "ETAinMins",
-                (
-                    (time.time() - start_time)
-                    / cfg.agent.logging.log_interval
-                    * (num_iterations - itr - 1)
-                    // 60
+                actor_critic.state_dict(),
+                osp.join(
+                    weights_dir,
+                    f"{(local_step + 1) * cfg.training.num_processes // 1000}k.pt",
                 ),
             )
 
-            start_time = time.time()
+        if (local_step + 1) % local_log_interval == 0:
+            current_step = (local_step + 1) * cfg.training.num_processes
 
-        if (itr + 1) % cfg.agent.logging.log_interval == 0 or itr == num_iterations - 1:
             # Record the last iteration rollouts
             logger.writer.add_video(
                 "RolloutsBuffer",
                 torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
-                itr + 1,
+                current_step,
                 fps=15,
             )
 
-            logger.log_tabular("TotalEnvInteracts", (itr + 1) * cfg.training.num_steps)
-            logger.dump_tabular(itr + 1)
+            for info_logger in env_info_loggers:
+                info_logger.compute_stats(logger)
+            agent.compute_stats(logger)
 
-        rollouts.after_update()
+            elapsed_time = time.time() - start_time
+            start_time = time.time()
+
+            logger.log_tabular(
+                "StepsPerSecond",
+                local_log_interval * cfg.training.num_processes / elapsed_time,
+            )
+            logger.log_tabular(
+                "ETAinMins",
+                (
+                    elapsed_time
+                    / local_log_interval
+                    * (local_total_steps - local_step - 1)
+                    // 60
+                ),
+            )
+
+            logger.dump_tabular(current_step)
+
+        if (local_step + 1) % local_num_steps == 0:
+            rollouts.after_update()
 
 
 if __name__ == "__main__":
