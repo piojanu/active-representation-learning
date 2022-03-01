@@ -170,7 +170,8 @@ def main(cfg):
         agent.log_info(logger, info)
 
         if not isinstance(actor_critic, DummyActorCritic) and (
-            (itr + 1) % cfg.agent.logging.save_interval == 0 or itr == num_iterations - 1
+            (itr + 1) % cfg.agent.logging.save_interval == 0
+            or itr == num_iterations - 1
         ):
             torch.save(
                 [
