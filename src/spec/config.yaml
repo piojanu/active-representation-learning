@@ -4,7 +4,7 @@ defaults:
   - _self_
 hydra:
   run:
-    dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${run_name:}/${now:T%H-%M-%S}
+    dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${run_name:}/${now:T%H-%M-%S}/s${seed}
   sweep:
     dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${run_name:}
     subdir: mr:${hydra.job.override_dirname}/s${seed}
