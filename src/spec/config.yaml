@@ -14,7 +14,7 @@ hydra:
         exclude_keys:
           - seed
 
-env: ???
+env: MiniWorld-PickupObjs-v0
 rollout:
   bootstrap_value_at_time_limit: False
   force_non_episodic: True # Force the advantage calculation as if the env. was non-episodic

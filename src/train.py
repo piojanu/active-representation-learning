@@ -103,7 +103,7 @@ def main(cfg):
     # Prepare logger
     logger = EpochLogger()
 
-    if agent is DummyAgent:
+    if isinstance(agent, DummyAgent):
         local_agent_log_interval = None
         local_agent_save_interval = None
     else:
@@ -263,11 +263,12 @@ def main(cfg):
                 fps=15,
             )
 
-            logger.log_tabular("RolloutReturn", with_min_and_max=True)
-            logger.log_tabular("RolloutLength", with_min_and_max=True)
-            logger.log_tabular(
-                "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
-            )
+            # TODO: Uncomment this when working with episodic envs again
+            # logger.log_tabular("RolloutReturn", with_min_and_max=True)
+            # logger.log_tabular("RolloutLength", with_min_and_max=True)
+            # logger.log_tabular(
+            #     "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
+            # )
 
             elapsed_time = time.time() - start_time
             start_time = time.time()

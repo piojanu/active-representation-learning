@@ -5,10 +5,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python: Current File",
+      "name": "Python: Train 10k steps in LookAtObjs",
       "type": "python",
       "request": "launch",
-      "program": "${file}",
+      "program": "${workspaceFolder}/src/train.py",
+      "cwd": "${workspaceFolder}/src/",
+      "args": ["--mock", "+experiment=10k_steps_in_lookatobjs"],
       "env": {
         "SCRATCH_SPACE": "/tmp"
       },
