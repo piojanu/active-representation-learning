@@ -13,7 +13,7 @@ from torchvision.transforms import Resize
 from wrappers import TrainSimCLR
 
 
-def make_env(env_name, rank, seed, encoder_cfg, gym_kwargs):
+def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
     def _get_device_name(rank):
         if torch.cuda.is_available():
             if torch.cuda.device_count() == 1:
@@ -51,6 +51,7 @@ def make_env(env_name, rank, seed, encoder_cfg, gym_kwargs):
                 learning_rate=encoder_cfg.learning_rate,
                 mini_batch_size=encoder_cfg.mini_batch_size,
                 mixing_coef=encoder_cfg.mixing_coef,
+                num_processes=num_processes,
                 num_updates=encoder_cfg.num_updates,
                 projection_dim=encoder_cfg.projection_dim,
                 save_interval=encoder_cfg.logging.save_interval,
@@ -71,12 +72,14 @@ def make_vec_env(
     if num_processes > 1:
         env = SubprocVecEnv(
             [
-                make_env(env_name, idx, seed, encoder_cfg, gym_kwargs)
+                make_env(env_name, idx, num_processes, seed, encoder_cfg, gym_kwargs)
                 for idx in range(num_processes)
             ]
         )
     else:
-        env = DummyVecEnv([make_env(env_name, 0, seed, encoder_cfg, gym_kwargs)])
+        env = DummyVecEnv(
+            [make_env(env_name, 0, num_processes, seed, encoder_cfg, gym_kwargs)]
+        )
     env = PyTorchToDevice(env, device)
     env = PyTorchResizeObs(env, agent_obs_size)
 

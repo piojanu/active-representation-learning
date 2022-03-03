@@ -22,6 +22,7 @@ class TrainSimCLR(gym.Wrapper):
         learning_rate,
         mini_batch_size,
         mixing_coef,
+        num_processes,
         num_updates,
         projection_dim,
         save_interval,
@@ -32,6 +33,7 @@ class TrainSimCLR(gym.Wrapper):
         self.buffer_size = buffer_size
         self.mini_batch_size = mini_batch_size
         self.mixing_coef = mixing_coef
+        self.num_processes = num_processes
         self.num_updates = num_updates
         self.save_interval = save_interval
 
@@ -81,9 +83,9 @@ class TrainSimCLR(gym.Wrapper):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
 
         # Save checkpoint at step zero
-        self.save_checkpoint()
+        self.save_checkpoint(0)
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, local_step):
         torch.save(
             [
                 self.encoder,
@@ -94,7 +96,8 @@ class TrainSimCLR(gym.Wrapper):
         )
         torch.save(
             [self.encoder.state_dict(), self.model.projector.state_dict()],
-            osp.join(self.ckpt_dir, f"{self.total_updates}.pt"),
+            # Align the file name to the log step
+            osp.join(self.ckpt_dir, f"{local_step * self.num_processes}.pt"),
         )
 
     def transform_batch(self, batch):
@@ -144,17 +147,16 @@ class TrainSimCLR(gym.Wrapper):
                 self.optimizer.step()
             self.total_updates += num_updates
 
-            # Mix the loss in if updated SimCLR
             if num_updates > 0:
                 with torch.no_grad():
                     mix_rew = self.mixing_coef * (5.0 - loss.item())
                     info["encoder"] = dict(loss=loss.item())
+
+                # Checkpoint
+                if self.total_updates % self.save_interval == 0:
+                    self.save_checkpoint(self.counter + 1)
             else:
                 mix_rew = 0.0
-
-            # Checkpoint
-            if self.total_updates % self.save_interval == 0:
-                self.save_checkpoint()
 
         self.counter += 1
         mix_rew += (1 - self.mixing_coef) * rew
