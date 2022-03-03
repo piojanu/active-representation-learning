@@ -108,31 +108,19 @@ def main(cfg):
         local_agent_save_interval = None
     else:
         # Change intervals unit into local steps
-        local_agent_log_interval = int(
-            cfg.agent.logging.log_interval
-            * cfg.training.num_steps
-            // cfg.training.num_processes
-        )
-        local_agent_save_interval = int(
-            cfg.agent.logging.save_interval
-            * cfg.training.num_steps
-            // cfg.training.num_processes
-        )
+        local_agent_log_interval = cfg.agent.logging.log_interval * local_num_steps
+        local_agent_save_interval = cfg.agent.logging.save_interval * local_num_steps
 
     if cfg.encoder.algo.lower() == "dummy":
         local_encoder_log_interval = None
     else:
         # Change intervals unit into local steps
-        local_encoder_log_interval = int(
+        local_encoder_log_interval = (
             cfg.encoder.logging.log_interval // cfg.encoder.num_updates
         )
 
     # Change intervals unit into local steps
-    local_rollout_log_interval = int(
-        cfg.agent.logging.log_interval
-        * cfg.training.num_steps
-        // cfg.training.num_processes
-    )
+    local_rollout_log_interval = cfg.agent.logging.log_interval * local_num_steps
 
     # Training loop
     local_total_steps = int(cfg.training.total_steps // cfg.training.num_processes)
@@ -163,7 +151,10 @@ def main(cfg):
                     RolloutLength=info["episode"]["l"],
                 )
             if "encoder" in info.keys():
-                logger.store(LossEncoder=info["encoder"]["loss"])
+                logger.store(
+                    LossEncoder=info["encoder"]["loss"],
+                    EncoderUpdates=info["encoder"]["total_updates"],
+                )
 
         # If done then clean the history of observations
         non_terminal_masks = torch.FloatTensor(
@@ -237,6 +228,9 @@ def main(cfg):
             dump_logs = True
 
             logger.log_tabular("LossEncoder")
+            logger.log_tabular(
+                "EncoderUpdates", average_only=True, with_min_and_max=True
+            )
 
         # If it's time to log agent...
         if (
@@ -250,6 +244,7 @@ def main(cfg):
             logger.log_tabular("DistEntropy", with_min_and_max=True)
             logger.log_tabular("ApproxKL", with_min_and_max=True)
             logger.log_tabular("PPOUpdates", average_only=True)
+            logger.log_tabular("PolicyInterations", (local_step + 1) // local_num_steps)
 
         # If it's time to log rollout...
         if (local_step + 1) % local_rollout_log_interval == 0:

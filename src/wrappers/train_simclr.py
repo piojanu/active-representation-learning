@@ -150,7 +150,10 @@ class TrainSimCLR(gym.Wrapper):
             if num_updates > 0:
                 with torch.no_grad():
                     mix_rew = self.mixing_coef * (5.0 - loss.item())
-                    info["encoder"] = dict(loss=loss.item())
+
+                info["encoder"] = dict(
+                    loss=loss.item(), total_updates=self.total_updates
+                )
 
                 # Checkpoint
                 if self.total_updates % self.save_interval == 0:
