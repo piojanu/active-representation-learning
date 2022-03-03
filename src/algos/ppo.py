@@ -3,10 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from utils.logx import InfoLogger
 
-
-class PPO(InfoLogger):
+class PPO:
     def __init__(
         self,
         actor_critic,
@@ -129,21 +127,3 @@ class PPO(InfoLogger):
             ApproxKL=approx_kl.item(),
             PPOUpdates=total_updates,
         )
-
-    @staticmethod
-    def log_info(logger, info):
-        logger.store(
-            LossValue=info["LossValue"],
-            LossPolicy=info["LossPolicy"],
-            DistEntropy=info["DistEntropy"],
-            ApproxKL=info["ApproxKL"],
-            PPOUpdates=info["PPOUpdates"],
-        )
-
-    @staticmethod
-    def compute_stats(logger):
-        logger.log_tabular("LossValue")
-        logger.log_tabular("LossPolicy")
-        logger.log_tabular("DistEntropy", with_min_and_max=True)
-        logger.log_tabular("ApproxKL", with_min_and_max=True)
-        logger.log_tabular("PPOUpdates", average_only=True)

@@ -10,7 +10,6 @@ from stable_baselines3.common.env_util import is_wrapped
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
 from torchvision.transforms import Resize
 
-from utils.logx import InfoLogger
 from wrappers import TrainSimCLR
 
 
@@ -82,24 +81,6 @@ def make_vec_env(
     env = PyTorchResizeObs(env, agent_obs_size)
 
     return env
-
-
-class EpisodeInfoLogger(InfoLogger):
-    @staticmethod
-    def log_info(logger, info):
-        if "episode" in info.keys():
-            logger.store(
-                RolloutReturn=info["episode"]["r"],
-                RolloutLength=info["episode"]["l"],
-            )
-
-    @staticmethod
-    def compute_stats(logger):
-        logger.log_tabular("RolloutReturn", with_min_and_max=True)
-        logger.log_tabular("RolloutLength", with_min_and_max=True)
-        logger.log_tabular(
-            "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
-        )
 
 
 class PyTorchResizeObs(VecEnvWrapper):

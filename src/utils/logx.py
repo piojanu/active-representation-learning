@@ -208,15 +208,3 @@ class EpochLogger(Logger):
         for key, vals in self.histogram_dict.items():
             self.writer.add_histogram(key, vals, global_step)
         self.histogram_dict.clear()
-
-
-class InfoLogger:
-    """Abstraction object's info logging handlers."""
-
-    @staticmethod
-    def log_info(logger, info):
-        raise NotImplementedError()
-
-    @staticmethod
-    def compute_stats(logger):
-        raise NotImplementedError()

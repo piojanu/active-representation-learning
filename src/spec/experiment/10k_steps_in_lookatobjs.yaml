@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - override /agent: constant
+  - override /encoder: simclr
+
+env: MiniWorld-LookAtObjs-v0
+training:
+  total_steps: 1e4

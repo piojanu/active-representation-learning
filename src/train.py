@@ -5,23 +5,20 @@ import time
 
 import hydra
 import torch
-from gym.wrappers import RecordEpisodeStatistics
 from omegaconf import OmegaConf
 
 from algos.dummy import DummyAgent
 from algos.ppo import PPO
-from envs import EpisodeInfoLogger, make_vec_env
+from envs import make_vec_env
 from models.actor_critic import ActorCritic
 from models.baselines import (
     ConstantActorCritic,
-    DummyActorCritic,
     RandomActorCritic,
     RandomRepeatActorCritic,
 )
 from utils.logx import EpochLogger
 from utils.namesgenerator import get_random_name
 from utils.storage import RolloutStorage
-from wrappers import TrainSimCLR
 
 OBS_WIDTH = 64
 OBS_HEIGHT = 64
@@ -33,6 +30,7 @@ def main(cfg):
     time.sleep(5)
 
     print(OmegaConf.to_yaml(cfg))
+    assert cfg.training.num_steps % cfg.training.num_processes == 0
 
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed_all(cfg.seed)
@@ -54,12 +52,6 @@ def main(cfg):
         encoder_cfg=cfg.encoder,
         gym_kwargs=dict(obs_width=OBS_WIDTH, obs_height=OBS_HEIGHT),
     )
-
-    env_info_loggers = []
-    if all(env.env_is_wrapped(RecordEpisodeStatistics)):
-        env_info_loggers.append(EpisodeInfoLogger)
-    if all(env.env_is_wrapped(TrainSimCLR)):
-        env_info_loggers.append(TrainSimCLR)
 
     if cfg.agent.algo.lower() == "ppo":
         actor_critic = ActorCritic(
@@ -96,19 +88,7 @@ def main(cfg):
     else:
         raise KeyError(f"Agent {cfg.agent.algo} not supported")
 
-    local_num_steps = int(cfg.training.num_steps // cfg.training.num_processes)
-    local_total_steps = int(cfg.training.total_steps // cfg.training.num_processes)
-    local_save_interval = int(
-        cfg.agent.logging.save_interval
-        * cfg.training.num_steps
-        // cfg.training.num_processes
-    )
-    local_log_interval = int(
-        cfg.agent.logging.log_interval
-        * cfg.training.num_steps
-        // cfg.training.num_processes
-    )
-
+    local_num_steps = cfg.training.num_steps // cfg.training.num_processes
     rollouts = RolloutStorage(
         local_num_steps,
         cfg.training.num_processes,
@@ -120,10 +100,47 @@ def main(cfg):
     rollouts.obs[0].copy_(obs)
     rollouts.to(device)
 
+    # Prepare logger
     logger = EpochLogger()
 
+    if agent is DummyAgent:
+        local_agent_log_interval = None
+        local_agent_save_interval = None
+    else:
+        # Change intervals unit into local steps
+        local_agent_log_interval = int(
+            cfg.agent.logging.log_interval
+            * cfg.training.num_steps
+            // cfg.training.num_processes
+        )
+        local_agent_save_interval = int(
+            cfg.agent.logging.save_interval
+            * cfg.training.num_steps
+            // cfg.training.num_processes
+        )
+
+    if cfg.encoder.algo.lower() == "dummy":
+        local_encoder_log_interval = None
+    else:
+        # Change intervals unit into local steps
+        local_encoder_log_interval = int(
+            cfg.encoder.logging.log_interval // cfg.encoder.num_updates
+        )
+
+    # Change intervals unit into local steps
+    local_rollout_log_interval = int(
+        cfg.agent.logging.log_interval
+        * cfg.training.num_steps
+        // cfg.training.num_processes
+    )
+
+    # Training loop
+    local_total_steps = int(cfg.training.total_steps // cfg.training.num_processes)
     start_time = time.time()
     for local_step in range(local_total_steps):
+        global_step_plus_one = (local_step + 1) * cfg.training.num_processes
+        epoch_step = local_step % local_num_steps
+
         # Sample actions
         with torch.no_grad():
             (
@@ -132,18 +149,23 @@ def main(cfg):
                 action_log_prob,
                 recurrent_hidden_states,
             ) = actor_critic.act(
-                rollouts.obs[local_step % local_num_steps],
-                rollouts.recurrent_hidden_states[local_step % local_num_steps],
-                rollouts.non_terminal_masks[local_step % local_num_steps],
+                rollouts.obs[epoch_step],
+                rollouts.recurrent_hidden_states[epoch_step],
+                rollouts.non_terminal_masks[epoch_step],
             )
 
         # Observe reward and next obs
         obs, reward, done, infos = env.step(action)
         for info in infos:
-            for info_logger in env_info_loggers:
-                info_logger.log_info(logger, info)
+            if "episode" in info.keys():
+                logger.store(
+                    RolloutReturn=info["episode"]["r"],
+                    RolloutLength=info["episode"]["l"],
+                )
+            if "encoder" in info.keys():
+                logger.store(LossEncoder=info["encoder"]["loss"])
 
-        # If done then clean the history of observations.
+        # If done then clean the history of observations
         non_terminal_masks = torch.FloatTensor(
             [[1.0] if not done_ else [0.0] for done_ in done]
         )
@@ -161,8 +183,8 @@ def main(cfg):
             bad_masks,
         )
 
-        # If it's time to train...
-        if (local_step + 1) % local_num_steps == 0:
+        # If the buffer filled, then train
+        if epoch_step + 1 == local_num_steps:
             with torch.no_grad():
                 last_value = actor_critic.get_value(
                     rollouts.obs[-1],
@@ -179,11 +201,16 @@ def main(cfg):
             )
 
             info = agent.update(rollouts)
-            agent.log_info(logger, info)
+            logger.store(**info)
 
-        if (
-            not isinstance(actor_critic, DummyActorCritic)
-            and (local_step + 1) % local_save_interval == 0
+        # Bookkeeping from here til the end of the training loop
+
+        dump_logs = False
+
+        # If it's time to checkpoint agent...
+        if local_agent_save_interval is not None and (
+            (local_step + 1) % local_agent_save_interval == 0
+            or (local_step + 1) == local_total_steps
         ):
             torch.save(
                 [
@@ -200,39 +227,67 @@ def main(cfg):
                 ),
             )
 
-        if (local_step + 1) % local_log_interval == 0:
-            current_step = (local_step + 1) * cfg.training.num_processes
+        # If it's time to log encoder...
+        if (
+            local_encoder_log_interval is not None
+            and local_step >= cfg.encoder.buffer_size
+            and (local_step - cfg.encoder.buffer_size + 1) % local_encoder_log_interval
+            == 0
+        ):
+            dump_logs = True
+
+            logger.log_tabular("LossEncoder")
+
+        # If it's time to log agent...
+        if (
+            local_agent_log_interval is not None
+            and (local_step + 1) % local_agent_log_interval == 0
+        ):
+            dump_logs = True
+
+            logger.log_tabular("LossValue")
+            logger.log_tabular("LossPolicy")
+            logger.log_tabular("DistEntropy", with_min_and_max=True)
+            logger.log_tabular("ApproxKL", with_min_and_max=True)
+            logger.log_tabular("PPOUpdates", average_only=True)
+
+        # If it's time to log rollout...
+        if (local_step + 1) % local_rollout_log_interval == 0:
+            dump_logs = True
 
             # Record the last iteration rollouts
             logger.writer.add_video(
                 "RolloutsBuffer",
                 torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
-                current_step,
+                global_step_plus_one,
                 fps=15,
             )
 
-            for info_logger in env_info_loggers:
-                info_logger.compute_stats(logger)
-            agent.compute_stats(logger)
+            logger.log_tabular("RolloutReturn", with_min_and_max=True)
+            logger.log_tabular("RolloutLength", with_min_and_max=True)
+            logger.log_tabular(
+                "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
+            )
 
             elapsed_time = time.time() - start_time
             start_time = time.time()
 
             logger.log_tabular(
                 "StepsPerSecond",
-                local_log_interval * cfg.training.num_processes / elapsed_time,
+                local_rollout_log_interval * cfg.training.num_processes / elapsed_time,
             )
             logger.log_tabular(
                 "ETAinMins",
                 (
                     elapsed_time
-                    / local_log_interval
+                    / local_rollout_log_interval
                     * (local_total_steps - local_step - 1)
                     // 60
                 ),
             )
 
-            logger.dump_tabular(current_step)
+        if dump_logs:
+            logger.dump_tabular(global_step_plus_one)
 
         if (local_step + 1) % local_num_steps == 0:
             rollouts.after_update()

@@ -8,10 +8,9 @@ from simclr.modules import NT_Xent
 from simclr.simclr import SimCLR
 
 from models.resnet import ResNetEncoder
-from utils.logx import InfoLogger
 
 
-class TrainSimCLR(gym.Wrapper, InfoLogger):
+class TrainSimCLR(gym.Wrapper):
     """Collects data and trains SimCLR encoder, where loss drop is reward."""
 
     def __init__(
@@ -149,7 +148,7 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
             if num_updates > 0:
                 with torch.no_grad():
                     mix_rew = self.mixing_coef * (5.0 - loss.item())
-                    info["LossEncoder"] = loss.item()
+                    info["encoder"] = dict(loss=loss.item())
             else:
                 mix_rew = 0.0
 
@@ -161,12 +160,3 @@ class TrainSimCLR(gym.Wrapper, InfoLogger):
         mix_rew += (1 - self.mixing_coef) * rew
 
         return obs, mix_rew, done, info
-
-    @staticmethod
-    def log_info(logger, info):
-        if "LossEncoder" in info.keys():
-            logger.store(LossEncoder=info["LossEncoder"])
-
-    @staticmethod
-    def compute_stats(logger):
-        logger.log_tabular("LossEncoder")

@@ -33,7 +33,6 @@ class RolloutStorage(object):
         # a true terminal state (0.0).
         self.bad_masks = torch.ones(num_steps + 1, num_processes, 1)
 
-        self.num_steps = num_steps
         self.step = 0
 
     def to(self, device):
@@ -184,7 +183,7 @@ class RolloutStorage(object):
                 old_action_log_probs_batch.append(self.action_log_probs[:, ind])
                 adv_targ.append(self.advantages[:, ind])
 
-            T, N = self.num_steps, num_envs_per_batch
+            T, N = num_steps, num_envs_per_batch
             # These are all tensors of size (T, N, -1)
             obs_batch = torch.stack(obs_batch, 1)
             actions_batch = torch.stack(actions_batch, 1)
