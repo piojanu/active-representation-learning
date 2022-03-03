@@ -1,6 +1,5 @@
 """Some simple logging functionality, inspired by spinup's logging."""
 
-import atexit
 import os.path as osp
 
 import numpy as np
@@ -33,35 +32,25 @@ def colorize(string, color, bold=False, highlight=False):
 class Logger:
     """A general-purpose logger.
 
-    Makes it easy to save diagnostics, hyperparameter configurations, the
-    state of a training run, and the trained model.
+    Makes it easy to log diagnostics to CMD, TensorBoard, or Neptune.
     """
 
-    def __init__(self, output_fname="progress.txt", neptune_kwargs=None):
+    def __init__(self, neptune_kwargs=None):
         """Initialize a Logger.
 
         Args:
-            output_dir (string): A directory for saving results to.
-
-            output_fname (string): Name for the tab-separated-value file
-                containing metrics logged throughout a training run.
-
             neptune_kwargs (dict): Neptune init kwargs. If None, then Neptune
                 logging is disabled.
         """
-        self.output_file = open(osp.abspath(output_fname), "w")
-        atexit.register(self.output_file.close)
-
         if neptune_kwargs is not None:
             import neptune.new as neptune
 
             self.neptune_run = neptune.init(**neptune_kwargs)
         else:
             self.neptune_run = None
+
         self.writer = SummaryWriter(log_dir=osp.abspath("tb"))
 
-        self.first_row = True
-        self.log_headers = []
         self.log_current_row = {}
 
     def log_tabular(self, key, val):
@@ -72,13 +61,6 @@ class Logger:
         make sure to call ``dump_tabular`` to write them out to file and
         stdout (otherwise they will not get saved anywhere).
         """
-        if self.first_row:
-            self.log_headers.append(key)
-        else:
-            assert key in self.log_headers, (
-                "Trying to introduce a new key %s that "
-                "you didn't include in the first iteration" % key
-            )
         assert key not in self.log_current_row, (
             "You already set %s this iteration. "
             "Maybe you forgot to call dump_tabular()" % key
@@ -88,37 +70,29 @@ class Logger:
     def dump_tabular(self, global_step):
         """Write all of the diagnostics from the current iteration.
 
-        Writes both to stdout, and to the output file.
-
         Args:
             global_step (int): Global step value of the diagnostics.
         """
-        vals = []
-        key_lens = [len(key) for key in self.log_headers]
-        max_key_len = max(15, max(key_lens))
+        max_key_len = max(15, *[len(key) for key in self.log_current_row.keys()])
         keystr = "%" + "%d" % max_key_len
         fmt = "| " + keystr + "s | %15s |"
         n_slashes = 22 + max_key_len
         print("-" * n_slashes)
-        for key in self.log_headers:
-            val = self.log_current_row.get(key, "")
-            vals.append(val)
+
+        for key, val in self.log_current_row.items():
+            # Write to CMD
             valstr = "%8.3g" % val if hasattr(val, "__float__") else val
             print(fmt % (key, valstr))
-            if val == "":
-                continue
+
+            # Write to TensorBoard
             self.writer.add_scalar(key, val, global_step)
+
+            # Write to Neptune
             if self.neptune_run is not None:
                 self.neptune_run[key].log(val, global_step)
-        print("-" * n_slashes, flush=True)
-        if self.output_file is not None:
-            if self.first_row:
-                self.output_file.write("\t".join(self.log_headers) + "\n")
-            self.output_file.write("\t".join(map(str, vals)) + "\n")
-            self.output_file.flush()
 
+        print("-" * n_slashes, flush=True)
         self.log_current_row.clear()
-        self.first_row = False
 
 
 class EpochLogger(Logger):
