@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import multiprocessing as mp
+import os
 import os.path as osp
 
 import numpy as np
@@ -8,16 +10,19 @@ import torch
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from torch.utils.tensorboard import SummaryWriter
+
+MAX_WORKERS = 8
 
 
-def encode_frames(encoder, frames_nhwc):
-    # Transpose to NCHW
+def my_pid():
+    # Returns relative PID of a pool process
+    return mp.current_process()._identity[0]
+
+
+def encode_frames(encoder, frames_tensor):
     with torch.no_grad():
-        frames_nchw = frames_nhwc.transpose(0, 3, 1, 2)
-        frames_tensor = torch.from_numpy(frames_nchw).float()
-        features = encoder(frames_tensor / 255.0).numpy()
-
-    return features
+        return encoder(frames_tensor).cpu().numpy()
 
 
 def train_classifier(features, labels):
@@ -31,31 +36,106 @@ def evaluate_model(model, features, labels):
     return model.score(features, labels)
 
 
-def main(data_path, ckpt_dir, state_idx):
-    # Load the data
+def init_worker(data_path):
+    def _get_device_name(rank):
+        if torch.cuda.is_available():
+            if torch.cuda.device_count() == 1:
+                return "cuda:0"
+
+            # Distribute remaining environments evenly across GPUs
+            return "cuda:" + str(rank % torch.cuda.device_count())
+        else:
+            return "cpu"
+
+    global device
+    device = torch.device(_get_device_name(my_pid()))
+
+    # Load and preprocess the data
     with np.load(data_path) as data:
-        train_frames = data["train_frames"]
+        global train_frames
+        train_frames = (
+            # Transpose to NCHW
+            torch.from_numpy(data["train_frames"].transpose(0, 3, 1, 2))
+            .float()
+            .to(device)
+            / 255.0
+        )
+
+        global train_labels
         train_labels = data["train_labels"]
-        test_frames = data["test_frames"]
+
+        global test_frames
+        test_frames = (
+            # Transpose to NCHW
+            torch.from_numpy(data["test_frames"].transpose(0, 3, 1, 2))
+            .float()
+            .to(device)
+            / 255.0
+        )
+
+        global test_labels
         test_labels = data["test_labels"]
 
-    # Load the features extractor
+
+def worker(key_n_encoder_dir):
+    key, encoder_dir = key_n_encoder_dir
+
+    global device
+    global train_frames
+    global train_labels
+    global test_frames
+    global test_labels
+
     encoder, _, _ = torch.load(
-        osp.join(ckpt_dir, "checkpoint.pkl"), map_location=torch.device("cpu")
+        osp.join(encoder_dir, "checkpoint.pkl"), map_location=device
     )
-    encoder_state_dict, _ = torch.load(
-        osp.join(ckpt_dir, f"{state_idx}.pt"), map_location=torch.device("cpu")
-    )
-    encoder.load_state_dict(encoder_state_dict)
 
-    train_features = encode_frames(encoder, train_frames)
-    test_features = encode_frames(encoder, test_frames)
+    ckpt_paths = [
+        # (<step>, <path>)
+        (int(filename.rsplit(".", 1)[0]), osp.join(encoder_dir, filename))
+        for filename in os.listdir(encoder_dir)
+        if filename.endswith(".pt")
+    ]
 
-    model = train_classifier(train_features, train_labels)
+    accuracies = []
+    for step, path in ckpt_paths:
+        # The encoder state dict is at the position zero
+        encoder.load_state_dict(torch.load(path, map_location=device)[0])
 
-    accuracy = evaluate_model(model, test_features, test_labels)
+        train_features = encode_frames(encoder, train_frames)
+        test_features = encode_frames(encoder, test_frames)
 
-    print(f"TOP1 accuracy: {accuracy}")
+        model = train_classifier(train_features, train_labels)
+
+        value = evaluate_model(model, test_features, test_labels)
+
+        accuracies.append((step, value))
+
+    return (key, accuracies)
+
+
+def main(data_path, exp_dir):
+    tb_writer = None
+    for root, dirs, _ in os.walk(exp_dir):
+        if "tb" in dirs:
+            print(f"Processing: {osp.relpath(root, start=exp_dir)}")
+            tb_writer = SummaryWriter(log_dir=osp.join(root, "tb"))
+
+        if "encoder_0" in dirs:
+            encoder_dirs = [
+                # (<key>, <path>)
+                (dirname, osp.join(root, dirname))
+                for dirname in dirs
+                if "encoder_" in dirname
+            ]
+            with mp.Pool(
+                processes=MAX_WORKERS, initializer=init_worker, initargs=[data_path]
+            ) as pool:
+                result = pool.map(worker, encoder_dirs)
+                for key, accuracies in result:
+                    # Log accuracies sorted by step
+                    for step, value in sorted(accuracies, key=lambda x: x[0]):
+                        tb_writer.add_scalar(f"Accuracy/{key}", value, step)
 
 
 if __name__ == "__main__":
@@ -72,14 +152,9 @@ if __name__ == "__main__":
         else:
             raise FileNotFoundError(path)
 
-    parser = argparse.ArgumentParser(description="Evaluate the learned features.")
-    parser.add_argument("--data_path", type=_file_path, help="Path to the dataset.")
-    parser.add_argument(
-        "--ckpt_dir", type=_dir_path, help="Dir. path to the encoder checkpoints."
-    )
-    parser.add_argument(
-        "--state_idx", type=int, help="Index of the encoder state dict."
-    )
+    parser = argparse.ArgumentParser(description="Evaluate the learned features")
+    parser.add_argument("--data_path", type=_file_path, help="Path to the dataset")
+    parser.add_argument("--exp_dir", type=_dir_path, help="Dir. path to the experiment")
     args = parser.parse_args()
 
-    main(args.data_path, args.ckpt_dir, args.state_idx)
+    main(args.data_path, args.exp_dir)
