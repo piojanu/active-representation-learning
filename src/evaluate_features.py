@@ -124,7 +124,7 @@ def main(data_path, exp_dir):
         if "encoder_0" in dirs:
             encoder_dirs = [
                 # (<key>, <path>)
-                (dirname, osp.join(root, dirname))
+                (f"E{dirname[8:]}", osp.join(root, dirname))
                 for dirname in dirs
                 if "encoder_" in dirname
             ]
