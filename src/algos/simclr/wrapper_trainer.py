@@ -4,9 +4,9 @@ import os.path as osp
 import gym
 import torch
 import torchvision
-from simclr.modules import NT_Xent
 from simclr.simclr import SimCLR
 
+from algos.simclr import NT_Xent
 from models.resnet import ResNetEncoder
 
 

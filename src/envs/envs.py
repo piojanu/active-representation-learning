@@ -10,7 +10,7 @@ from stable_baselines3.common.env_util import is_wrapped
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
 from torchvision.transforms import Resize
 
-from wrappers import TrainSimCLR
+from algos.simclr import TrainSimCLR
 
 
 def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
