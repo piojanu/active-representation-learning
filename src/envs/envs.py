@@ -54,8 +54,9 @@ def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
                 num_processes=num_processes,
                 num_updates=encoder_cfg.num_updates,
                 projection_dim=encoder_cfg.projection_dim,
-                save_interval=encoder_cfg.logging.save_interval,
                 temperature=encoder_cfg.temperature,
+                log_interval=encoder_cfg.logging.log_interval,
+                save_interval=encoder_cfg.logging.save_interval,
             )
         else:
             if encoder_cfg.algo.lower() != "dummy":

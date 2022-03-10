@@ -214,7 +214,7 @@ def main(cfg):
                 actor_critic.state_dict(),
                 osp.join(
                     weights_dir,
-                    f"{(local_step + 1) * cfg.training.num_processes // 1000}k.pt",
+                    f"{global_step_plus_one // 1000}k.pt",
                 ),
             )
 
@@ -226,6 +226,11 @@ def main(cfg):
             == 0
         ):
             dump_logs = True
+
+            for idx, info in enumerate(infos):
+                logger.log_heatmap(
+                    f"ConfusionMatrix/E{idx}", info["encoder"]["confusion_matrix"]
+                )
 
             logger.log_tabular("LossEncoder")
             logger.log_tabular(

@@ -25,8 +25,9 @@ class TrainSimCLR(gym.Wrapper):
         num_processes,
         num_updates,
         projection_dim,
-        save_interval,
         temperature,
+        log_interval,
+        save_interval,
     ):
         super().__init__(env)
 
@@ -35,6 +36,7 @@ class TrainSimCLR(gym.Wrapper):
         self.mixing_coef = mixing_coef
         self.num_processes = num_processes
         self.num_updates = num_updates
+        self.log_interval = log_interval
         self.save_interval = save_interval
 
         self.device = torch.device(device_name)
@@ -140,7 +142,7 @@ class TrainSimCLR(gym.Wrapper):
 
                 # TODO: Should we use the loss after the update as the reward signal?
                 x_i, x_j = self.transform_batch(mini_batch)
-                loss = self.compute_loss(x_i, x_j)
+                loss, confusion_matrix = self.compute_loss(x_i, x_j)
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -152,8 +154,13 @@ class TrainSimCLR(gym.Wrapper):
                     mix_rew = self.mixing_coef * (5.0 - loss.item())
 
                 info["encoder"] = dict(
-                    loss=loss.item(), total_updates=self.total_updates
+                    loss=loss.item(),
+                    total_updates=self.total_updates,
                 )
+
+                # Send (quite big) confusion matrix only when it's time for logging
+                if self.total_updates % self.log_interval == 0:
+                    info["encoder"]["confusion_matrix"] = confusion_matrix
 
                 # Checkpoint
                 if self.total_updates % self.save_interval == 0:
