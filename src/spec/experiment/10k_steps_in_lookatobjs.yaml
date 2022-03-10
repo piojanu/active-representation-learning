@@ -5,4 +5,6 @@ defaults:
 
 env: MiniWorld-LookAtObjs-v0
 training:
-  total_steps: 1e4
+  num_processes: 8
+  num_steps: 2000
+  total_steps: 8e4 # 10k steps for each of 8 environments
