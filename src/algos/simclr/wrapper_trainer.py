@@ -88,7 +88,7 @@ class TrainSimCLR(gym.Wrapper):
         self.criterion = NT_Xent(self.mini_batch_size, temperature, world_size=1)
 
         # Create Adam optimizer
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
 
         # Save checkpoint at step zero
         self.save_checkpoint(0)
