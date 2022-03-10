@@ -18,6 +18,7 @@ class TrainSimCLR(gym.Wrapper):
         env,
         rank,
         device_name,
+        seed,
         buffer_size,
         learning_rate,
         mini_batch_size,
@@ -30,6 +31,11 @@ class TrainSimCLR(gym.Wrapper):
         save_interval,
     ):
         super().__init__(env)
+
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        # Is it required?
+        torch.set_num_threads(1)
 
         self.buffer_size = buffer_size
         self.mini_batch_size = mini_batch_size

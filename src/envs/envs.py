@@ -47,6 +47,7 @@ def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
                 env,
                 rank,
                 _get_device_name(rank),
+                seed + rank,
                 buffer_size=encoder_cfg.buffer_size,
                 learning_rate=encoder_cfg.learning_rate,
                 mini_batch_size=encoder_cfg.mini_batch_size,
