@@ -49,6 +49,7 @@ class TrainSimCLR(gym.Wrapper):
         self.buffer = torch.zeros(self.buffer_size, *self.observation_space.shape).to(
             self.device
         )
+        self.buffer_size_ones = torch.ones(self.buffer_size)
 
         self.counter = 0
         self.total_updates = 0
@@ -142,8 +143,8 @@ class TrainSimCLR(gym.Wrapper):
                 else int((self.counter - self.buffer_size) % self.update_every == 0)
             )
             for _ in range(0, num_updates):
-                # Sample mini batch
-                idxs = torch.randint(self.buffer_size, size=(self.mini_batch_size,))
+                # Sample mini batch (without replacement)
+                idxs = self.buffer_size_ones.multinomial(self.mini_batch_size)
                 mini_batch = self.buffer[idxs]
 
                 # TODO: Should we use the loss after the update as the reward signal?
