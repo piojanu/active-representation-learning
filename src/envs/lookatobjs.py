@@ -4,6 +4,29 @@ from gym import spaces
 from gym_miniworld.entity import Ball, Box, Key, MeshEnt
 from gym_miniworld.miniworld import MiniWorldEnv
 
+TEXTURES = [
+    "asphalt",
+    "brick_wall",
+    "cardboard",
+    "ceiling_tile_noborder",
+    "ceiling_tiles",
+    "cinder_blocks",
+    "concrete",
+    "concrete_tiles",
+    "drywall",
+    "floor_tiles_bw",
+    "grass",
+    "lava",
+    "marble",
+    "metal_grill",
+    "rock",
+    "slime",
+    "stucco",
+    "water",
+    "wood",
+    "wood_planks",
+]
+
 
 class Barrel(MeshEnt):
     def __init__(self, size=0.6):
@@ -56,14 +79,20 @@ class LookAtObjs(MiniWorldEnv):
         self.action_space = spaces.Discrete(self.actions.turn_right + 1)
 
     def _gen_world(self):
+        floor_tex = self.rand.choice(TEXTURES) if self.domain_rand else "asphalt"
+        wall_tex = self.rand.choice(TEXTURES) if self.domain_rand else "brick_wall"
+        ceil_tex = self.rand.choice(TEXTURES) if self.domain_rand else "concrete_tiles"
+        no_ceiling = self.rand.bool() if self.domain_rand else True
+
         self.add_rect_room(
             min_x=-self.size // 2,
             max_x=self.size // 2,
             min_z=-self.size // 2,
             max_z=self.size // 2,
-            wall_tex="brick_wall",
-            floor_tex="asphalt",
-            no_ceiling=True,
+            floor_tex=floor_tex,
+            wall_tex=wall_tex,
+            ceil_tex=ceil_tex,
+            no_ceiling=no_ceiling,
         )
 
         objs_type = self.rand.subset(
