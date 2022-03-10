@@ -2,7 +2,9 @@
 
 import os.path as osp
 
+import matplotlib.pyplot as plt
 import numpy as np
+from stable_baselines3.common.vec_env.base_vec_env import tile_images
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -51,7 +53,17 @@ class Logger:
 
         self.writer = SummaryWriter(log_dir=osp.abspath("tb"))
 
+        self.log_current_map = {}
         self.log_current_row = {}
+
+    def log_heatmap(self, key, val):
+        """Log a heatmap of some diagnostic."""
+
+        assert key not in self.log_current_map, (
+            "You already set %s this iteration. "
+            "Maybe you forgot to call dump_tabular()" % key
+        )
+        self.log_current_map[key] = val
 
     def log_tabular(self, key, val):
         """Log a value of some diagnostic.
@@ -77,8 +89,8 @@ class Logger:
         keystr = "%" + "%d" % max_key_len
         fmt = "| " + keystr + "s | %15s |"
         n_slashes = 22 + max_key_len
-        print("-" * n_slashes)
 
+        print("-" * n_slashes)
         for key, val in self.log_current_row.items():
             # Write to CMD
             valstr = "%8.3g" % val if hasattr(val, "__float__") else val
@@ -90,8 +102,17 @@ class Logger:
             # Write to Neptune
             if self.neptune_run is not None:
                 self.neptune_run[key].log(val, global_step)
-
         print("-" * n_slashes, flush=True)
+
+        for key, val in self.log_current_map.items():
+            # Generate a heatmap
+            fig, ax = plt.subplots()
+            ax.imshow(val, cmap="viridis")
+            fig.colorbar(plt.cm.ScalarMappable(cmap="viridis"), ax=ax)
+
+            self.writer.add_figure(key, fig, global_step)
+
+        self.log_current_map.clear()
         self.log_current_row.clear()
 
 
@@ -134,6 +155,27 @@ class EpochLogger(Logger):
             if k not in self.epoch_dict.keys():
                 self.epoch_dict[k] = []
             self.epoch_dict[k].append(v)
+
+    def log_heatmap(self, key, val=None):
+        """Log a heatmap or possibly the tiled heatmaps.
+
+        Args:
+            key (string): The name of the diagnostic. If you are logging a
+                diagnostic whose state has previously been saved with
+                ``store``, the key here has to match the key you used there.
+
+            val: Values for the heatmap. If you have previously saved
+                values for this key via ``store``, do *not* provide a ``val``
+                here.
+        """
+        if val is not None:
+            super().log_heatmap(key, val)
+        else:
+            # Add channel dimension
+            vals = np.expand_dims(np.asarray(self.epoch_dict[key]), axis=-1)
+            tiled_vals = tile_images(vals)
+            super().log_heatmap(key, tiled_vals)
+        self.epoch_dict[key] = []
 
     def log_tabular(
         self,  # pylint: disable=arguments-differ
