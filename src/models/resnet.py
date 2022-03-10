@@ -4,7 +4,7 @@ from torchvision.models.resnet import BasicBlock, Bottleneck, conv1x1
 
 
 class ResNetEncoder(nn.Module):
-    """Custom ResNet without head from Torchvision."""
+    """Custom ResNet without head, Torchvision implementation."""
 
     def __init__(
         self,

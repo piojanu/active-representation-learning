@@ -4,6 +4,8 @@ import torch.nn as nn
 from a2c_ppo_acktr.distributions import Bernoulli, Categorical, DiagGaussian
 from a2c_ppo_acktr.utils import init
 
+from models.convnet import ConvNetEncoder
+
 
 class ActorCritic(nn.Module):
     def __init__(self, obs_shape, action_space, hidden_size, recurrent):
@@ -153,42 +155,18 @@ class CNNBase(NNBase):
     def __init__(self, obs_shape, hidden_size=512, recurrent=False):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
-        # trunk-ignore(flake8/E731)
-        init_relu = lambda m: init(
-            m,
+        self.encoder = ConvNetEncoder(n_features=hidden_size)
+        self.critic_linear = init(
+            nn.Linear(hidden_size, 1),
             nn.init.orthogonal_,
             lambda x: nn.init.constant_(x, 0),
-            nn.init.calculate_gain("relu"),
         )
-
-        conv_net = nn.Sequential(
-            init_relu(nn.Conv2d(obs_shape[0], 32, 4, stride=2)),
-            nn.ReLU(),
-            init_relu(nn.Conv2d(32, 64, 4, stride=2)),
-            nn.ReLU(),
-            init_relu(nn.Conv2d(64, 64, 4, stride=1)),
-            nn.ReLU(),
-        )
-        n_features = np.prod(conv_net(torch.randn(1, *obs_shape)).shape)
-
-        self.body = nn.Sequential(
-            conv_net,
-            nn.Flatten(),
-            init_relu(nn.Linear(n_features, hidden_size)),
-            nn.Tanh(),
-        )
-
-        # trunk-ignore(flake8/E731)
-        init_identity = lambda m: init(
-            m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0)
-        )
-
-        self.critic_linear = init_identity(nn.Linear(hidden_size, 1))
 
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks):
-        x = self.body(inputs / 255.0)
+        x = self.encoder(inputs / 255.0)
+        x = torch.tanh(x)
 
         if self.is_recurrent:
             x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)

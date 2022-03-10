@@ -7,7 +7,7 @@ import torchvision
 from simclr.simclr import SimCLR
 
 from algos.simclr import NT_Xent
-from models.resnet import ResNetEncoder
+from models.convnet import ConvNetEncoder
 
 
 class TrainSimCLR(gym.Wrapper):
@@ -77,8 +77,8 @@ class TrainSimCLR(gym.Wrapper):
         self.scripted_transforms = torch.jit.script(transforms)
 
         # Create SimCLR encoder
-        self.encoder = ResNetEncoder(layers=[2, 2])
-        n_features = self.encoder(torch.randn(1, *env.observation_space.shape)).shape[1]
+        n_features = 128
+        self.encoder = ConvNetEncoder(n_features)
         self.encoder.to(self.device)
 
         # Create SimCLR projector
