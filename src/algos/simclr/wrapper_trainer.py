@@ -73,7 +73,7 @@ class TrainSimCLR(gym.Wrapper):
                 p=0.8,
             ),
             torchvision.transforms.RandomGrayscale(p=0.2),
-        )
+        ).to(self.device, non_blocking=True)
         self.scripted_transforms = torch.jit.script(transforms)
 
         # Create SimCLR encoder
