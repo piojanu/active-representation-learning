@@ -55,9 +55,9 @@ def init_worker(data_path):
         global train_frames
         train_frames = (
             # Transpose to NCHW
-            torch.from_numpy(data["train_frames"].transpose(0, 3, 1, 2))
-            .float()
-            .to(device)
+            torch.from_numpy(data["train_frames"].transpose(0, 3, 1, 2)).to(
+                device, dtype=torch.float, non_blocking=True
+            )
             / 255.0
         )
 
@@ -67,9 +67,9 @@ def init_worker(data_path):
         global test_frames
         test_frames = (
             # Transpose to NCHW
-            torch.from_numpy(data["test_frames"].transpose(0, 3, 1, 2))
-            .float()
-            .to(device)
+            torch.from_numpy(data["test_frames"].transpose(0, 3, 1, 2)).to(
+                device, dtype=torch.float, non_blocking=True
+            )
             / 255.0
         )
 

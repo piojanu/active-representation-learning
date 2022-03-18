@@ -46,11 +46,11 @@ class TrainSimCLR(gym.Wrapper):
         self.save_interval = save_interval
 
         self.device = torch.device(device_name)
-        self.buffer = torch.zeros(self.buffer_size, *self.observation_space.shape).to(
-            self.device
+        self.buffer = torch.zeros(
+            self.buffer_size, *self.observation_space.shape, device=self.device
         )
-        self.buffer_size_ones = torch.ones(self.buffer_size)
 
+        self.buffer_size_ones = torch.ones(self.buffer_size)
         self.counter = 0
         self.total_updates = 0
         self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
@@ -79,11 +79,11 @@ class TrainSimCLR(gym.Wrapper):
         # Create SimCLR encoder
         n_features = 128
         self.encoder = ConvNetEncoder(n_features)
-        self.encoder.to(self.device)
+        self.encoder.to(self.device, non_blocking=True)
 
         # Create SimCLR projector
         self.model = SimCLR(self.encoder, projection_dim, n_features)
-        self.model.to(self.device)
+        self.model.to(self.device, non_blocking=True)
 
         # Create SimCLR criterion
         self.criterion = NT_Xent(self.mini_batch_size, temperature, world_size=1)
@@ -129,12 +129,12 @@ class TrainSimCLR(gym.Wrapper):
         obs, rew, done, info = self.env.step(action)
 
         if self.counter < self.buffer_size:
-            self.buffer[self.counter].copy_(torch.from_numpy(obs))
+            self.buffer[self.counter].copy_(torch.from_numpy(obs), non_blocking=True)
             mix_rew = 0.0
         else:
             # Replace a random buffer's element with the observation
             ptr = torch.randint(self.buffer_size, size=(1,))
-            self.buffer[ptr].copy_(torch.from_numpy(obs))
+            self.buffer[ptr].copy_(torch.from_numpy(obs), non_blocking=True)
 
             # Run fractional, only one, or multiple SimCLR updates
             num_updates = (

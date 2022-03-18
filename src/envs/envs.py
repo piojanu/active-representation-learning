@@ -113,7 +113,9 @@ class PyTorchToDevice(VecEnvWrapper):
 
     def reset(self):
         obs = self.venv.reset()
-        obs = torch.from_numpy(obs).float().to(self.device)
+        obs = torch.from_numpy(obs).to(
+            self.device, dtype=torch.float, non_blocking=True
+        )
         return obs
 
     def step_async(self, actions):
@@ -125,6 +127,12 @@ class PyTorchToDevice(VecEnvWrapper):
 
     def step_wait(self):
         obs, rew, done, info = self.venv.step_wait()
-        obs = torch.from_numpy(obs).float().to(self.device)
-        rew = torch.from_numpy(rew).unsqueeze(dim=1).float().to(self.device)
+        obs = torch.from_numpy(obs).to(
+            self.device, dtype=torch.float, non_blocking=True
+        )
+        rew = (
+            torch.from_numpy(rew)
+            .unsqueeze(dim=1)
+            .to(self.device, dtype=torch.float, non_blocking=True)
+        )
         return obs, rew, done, info

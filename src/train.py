@@ -60,7 +60,7 @@ def main(cfg):
             hidden_size=cfg.agent.model.hidden_size,
             recurrent=cfg.agent.model.recurrent,
         )
-        actor_critic.to(device)
+        actor_critic.to(device, non_blocking=True)
 
         agent = PPO(
             actor_critic,
@@ -97,8 +97,8 @@ def main(cfg):
         actor_critic.recurrent_hidden_state_size,
     )
     obs = env.reset()
-    rollouts.obs[0].copy_(obs)
-    rollouts.to(device)
+    rollouts.obs[0].copy_(obs, non_blocking=True)
+    rollouts.to(device, non_blocking=True)
 
     # Prepare logger
     logger = EpochLogger()

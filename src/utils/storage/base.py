@@ -35,17 +35,23 @@ class RolloutStorage(object):
 
         self.step = 0
 
-    def to(self, device):
-        self.obs = self.obs.to(device)
-        self.recurrent_hidden_states = self.recurrent_hidden_states.to(device)
-        self.rewards = self.rewards.to(device)
-        self.value_preds = self.value_preds.to(device)
-        self.returns = self.returns.to(device)
-        self.advantages = self.advantages.to(device)
-        self.action_log_probs = self.action_log_probs.to(device)
-        self.actions = self.actions.to(device)
-        self.non_terminal_masks = self.non_terminal_masks.to(device)
-        self.bad_masks = self.bad_masks.to(device)
+    def to(self, device, non_blocking):
+        self.obs = self.obs.to(device, non_blocking=non_blocking)
+        self.recurrent_hidden_states = self.recurrent_hidden_states.to(
+            device, non_blocking=non_blocking
+        )
+        self.rewards = self.rewards.to(device, non_blocking=non_blocking)
+        self.value_preds = self.value_preds.to(device, non_blocking=non_blocking)
+        self.returns = self.returns.to(device, non_blocking=non_blocking)
+        self.advantages = self.advantages.to(device, non_blocking=non_blocking)
+        self.action_log_probs = self.action_log_probs.to(
+            device, non_blocking=non_blocking
+        )
+        self.actions = self.actions.to(device, non_blocking=non_blocking)
+        self.non_terminal_masks = self.non_terminal_masks.to(
+            device, non_blocking=non_blocking
+        )
+        self.bad_masks = self.bad_masks.to(device, non_blocking=non_blocking)
 
     def insert(
         self,
@@ -58,22 +64,28 @@ class RolloutStorage(object):
         non_terminal_masks,
         bad_masks,
     ):
-        self.obs[self.step + 1].copy_(obs)
-        self.recurrent_hidden_states[self.step + 1].copy_(recurrent_hidden_states)
-        self.actions[self.step].copy_(actions)
-        self.action_log_probs[self.step].copy_(action_log_probs)
-        self.value_preds[self.step].copy_(value_preds)
-        self.rewards[self.step].copy_(rewards)
-        self.non_terminal_masks[self.step + 1].copy_(non_terminal_masks)
-        self.bad_masks[self.step + 1].copy_(bad_masks)
+        self.obs[self.step + 1].copy_(obs, non_blocking=True)
+        self.recurrent_hidden_states[self.step + 1].copy_(
+            recurrent_hidden_states, non_blocking=True
+        )
+        self.actions[self.step].copy_(actions, non_blocking=True)
+        self.action_log_probs[self.step].copy_(action_log_probs, non_blocking=True)
+        self.value_preds[self.step].copy_(value_preds, non_blocking=True)
+        self.rewards[self.step].copy_(rewards, non_blocking=True)
+        self.non_terminal_masks[self.step + 1].copy_(
+            non_terminal_masks, non_blocking=True
+        )
+        self.bad_masks[self.step + 1].copy_(bad_masks, non_blocking=True)
 
         self.step += 1
 
     def after_update(self):
-        self.obs[0].copy_(self.obs[-1])
-        self.recurrent_hidden_states[0].copy_(self.recurrent_hidden_states[-1])
-        self.non_terminal_masks[0].copy_(self.non_terminal_masks[-1])
-        self.bad_masks[0].copy_(self.bad_masks[-1])
+        self.obs[0].copy_(self.obs[-1], non_blocking=True)
+        self.recurrent_hidden_states[0].copy_(
+            self.recurrent_hidden_states[-1], non_blocking=True
+        )
+        self.non_terminal_masks[0].copy_(self.non_terminal_masks[-1], non_blocking=True)
+        self.bad_masks[0].copy_(self.bad_masks[-1], non_blocking=True)
 
         self.step = 0
 
