@@ -8,9 +8,8 @@ import torch
 from omegaconf import OmegaConf
 
 from algos.dummy import DummyAgent
-from algos.ppo import PPO
+from algos.ppo import PPO, ActorCritic
 from envs import make_vec_env
-from models.actor_critic import ActorCritic
 from models.baselines import (
     ConstantActorCritic,
     RandomActorCritic,
