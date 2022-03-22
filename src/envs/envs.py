@@ -21,11 +21,7 @@ def make_env(
             if torch.cuda.device_count() == 1:
                 return "cuda:0"
 
-            # The first GPU serves OGL and the agent training, skip it once
-            if rank == 0:
-                return "cuda:1"
-
-            # Distribute remaining environments evenly across GPUs
+            # Distribute environments evenly across GPUs
             return "cuda:" + str(rank % torch.cuda.device_count())
         else:
             return "cpu"
