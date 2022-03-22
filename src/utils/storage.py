@@ -96,6 +96,7 @@ class RolloutStorage(object):
         gamma,
         bootstrap_value_at_time_limit,
         force_non_episodic,
+        mix_rewards=None,
     ):
         """Compute the lambda-return (TD(lambda) estimate) and GAE advantage.
 
@@ -106,6 +107,9 @@ class RolloutStorage(object):
         For more information, see discussion in https://github.com/DLR-RM/stable-baselines3/pull/375
         """
         self.value_preds[-1] = last_value
+
+        if mix_rewards is not None:
+            self.rewards += mix_rewards
 
         if force_non_episodic:
             masks = torch.ones_like(self.non_terminal_masks)

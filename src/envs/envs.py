@@ -13,7 +13,9 @@ from torchvision.transforms import Resize
 from algos.simclr import TrainSimCLR
 
 
-def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
+def make_env(
+    env_name, local_num_steps, rank, num_processes, seed, encoder_cfg, gym_kwargs
+):
     def _get_device_name(rank):
         if torch.cuda.is_available():
             if torch.cuda.device_count() == 1:
@@ -45,17 +47,17 @@ def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
         if encoder_cfg.algo.lower() == "simclr":
             env = TrainSimCLR(
                 env,
+                local_num_steps,
                 rank,
+                num_processes,
                 _get_device_name(rank),
-                seed + rank,
-                buffer_size=encoder_cfg.buffer_size,
-                learning_rate=encoder_cfg.learning_rate,
-                mini_batch_size=encoder_cfg.mini_batch_size,
-                mixing_coef=encoder_cfg.mixing_coef,
-                num_processes=num_processes,
-                num_updates=encoder_cfg.num_updates,
-                projection_dim=encoder_cfg.projection_dim,
-                temperature=encoder_cfg.temperature,
+                seed,
+                projection_dim=encoder_cfg.model.projection_dim,
+                temperature=encoder_cfg.model.temperature,
+                buffer_size=encoder_cfg.training.buffer_size,
+                learning_rate=encoder_cfg.training.learning_rate,
+                mini_batch_size=encoder_cfg.training.mini_batch_size,
+                num_updates=encoder_cfg.training.num_updates,
                 log_interval=encoder_cfg.logging.log_interval,
                 save_interval=encoder_cfg.logging.save_interval,
             )
@@ -68,17 +70,37 @@ def make_env(env_name, rank, num_processes, seed, encoder_cfg, gym_kwargs):
     return _thunk
 
 
-def make_vec_env(env_name, num_processes, device, seed, encoder_cfg, gym_kwargs):
+def make_vec_env(
+    env_name, local_num_steps, num_processes, device, seed, encoder_cfg, gym_kwargs
+):
     if num_processes > 1:
         env = SubprocVecEnv(
             [
-                make_env(env_name, idx, num_processes, seed, encoder_cfg, gym_kwargs)
+                make_env(
+                    env_name,
+                    local_num_steps,
+                    idx,
+                    num_processes,
+                    seed,
+                    encoder_cfg,
+                    gym_kwargs,
+                )
                 for idx in range(num_processes)
             ]
         )
     else:
         env = DummyVecEnv(
-            [make_env(env_name, 0, num_processes, seed, encoder_cfg, gym_kwargs)]
+            [
+                make_env(
+                    env_name,
+                    local_num_steps,
+                    0,
+                    num_processes,
+                    seed,
+                    encoder_cfg,
+                    gym_kwargs,
+                )
+            ]
         )
     env = PyTorchToDevice(env, device)
 

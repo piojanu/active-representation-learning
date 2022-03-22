@@ -2,10 +2,11 @@ defaults:
   - base
 
 algo: "SimCLR"
-buffer_size: 128
-learning_rate: 3e-4
-mini_batch_size: 64
-mixing_coef: 1.0
-num_updates: 1
-projection_dim: 64
-temperature: 0.5
+model:
+  projection_dim: 64
+  temperature: 0.5
+training:
+  buffer_size: 128
+  learning_rate: 3e-4
+  mini_batch_size: 64
+  num_updates: 1

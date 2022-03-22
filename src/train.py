@@ -43,8 +43,10 @@ def main(cfg):
     os.makedirs(ckpt_dir)
     os.makedirs(weights_dir)
 
+    local_num_steps = cfg.training.num_steps // cfg.training.num_processes
     env = make_vec_env(
         cfg.env,
+        local_num_steps,
         cfg.training.num_processes,
         device=device,
         seed=cfg.seed,
@@ -87,7 +89,6 @@ def main(cfg):
     else:
         raise KeyError(f"Agent {cfg.agent.algo} not supported")
 
-    local_num_steps = cfg.training.num_steps // cfg.training.num_processes
     rollouts = RolloutStorage(
         local_num_steps,
         cfg.training.num_processes,
@@ -114,9 +115,7 @@ def main(cfg):
         local_encoder_log_interval = None
     else:
         # Change intervals unit into local steps
-        local_encoder_log_interval = (
-            cfg.encoder.logging.log_interval // cfg.encoder.num_updates
-        )
+        local_encoder_log_interval = cfg.encoder.logging.log_interval * local_num_steps
 
     # Change intervals unit into local steps
     local_rollout_log_interval = cfg.agent.logging.log_interval * local_num_steps
@@ -151,7 +150,7 @@ def main(cfg):
                 )
             if "encoder" in info.keys():
                 logger.store(
-                    LossEncoder=info["encoder"]["loss"],
+                    LossEncoder=info["encoder"]["losses"],
                     EncoderUpdates=info["encoder"]["total_updates"],
                 )
 
@@ -188,6 +187,16 @@ def main(cfg):
                 cfg.rollout.gamma,
                 cfg.rollout.bootstrap_value_at_time_limit,
                 cfg.rollout.force_non_episodic,
+                # TODO: Refactor it so this logic is hidden and can be disabled
+                mix_rewards=torch.stack(
+                    [
+                        torch.tensor(info["encoder"]["losses"], device=device)
+                        for info in infos
+                    ],
+                    dim=1,
+                ).unsqueeze(-1)
+                if "encoder" in infos[0]
+                else None,
             )
 
             info = agent.update(rollouts)
@@ -220,16 +229,9 @@ def main(cfg):
         # If it's time to log encoder...
         if (
             local_encoder_log_interval is not None
-            and local_step >= cfg.encoder.buffer_size
-            and (local_step - cfg.encoder.buffer_size + 1) % local_encoder_log_interval
-            == 0
+            and (local_step + 1) % local_encoder_log_interval == 0
         ):
             dump_logs = True
-
-            for idx, info in enumerate(infos):
-                logger.log_heatmap(
-                    f"ConfusionMatrix/E{idx}", info["encoder"]["confusion_matrix"]
-                )
 
             logger.log_tabular("LossEncoder")
             logger.log_tabular(
