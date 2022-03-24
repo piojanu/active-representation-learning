@@ -12,7 +12,37 @@ from simclr.simclr import SimCLR
 from algos.simclr import NT_Xent
 from nets.convnet import ConvNetEncoder
 
-_Command = namedtuple("Command", ["name", "data"], defaults=[None])
+_Command = namedtuple("Command", ["name", "step_count", "obs"], defaults=[None, None])
+
+
+class ReplayBuffer:
+    def __init__(self, buffer_size, obs_shape, device):
+        self.buffer_size = buffer_size
+
+        # Allocate replay buffer
+        # NOTE: Moving it into the pinned memory does/n't help
+        self.buffer = torch.zeros(self.buffer_size, *obs_shape, device=device)
+
+        self.buffer_size_ones = torch.ones(self.buffer_size)
+        self.ptr = 0
+
+    def insert(self, obs):
+        if self.ptr < self.buffer_size:
+            ptr = self.ptr
+        else:
+            # Replace a random buffer's element with the new observation
+            ptr = torch.randint(self.buffer_size, size=(1,))
+
+        self.buffer[ptr].copy_(torch.from_numpy(obs), non_blocking=True)
+        self.ptr += 1
+
+    def sample(self, mini_batch_size):
+        if self.ptr < self.buffer_size:
+            raise RuntimeWarning("Buffer not fully initialized")
+
+        # Sample mini batch (without replacement)
+        idxs = self.buffer_size_ones.multinomial(mini_batch_size)
+        return self.buffer[idxs]
 
 
 class _Daemon(threading.Thread):
@@ -39,7 +69,6 @@ class _Daemon(threading.Thread):
         super().__init__(daemon=True)
         del log_interval
 
-        self.buffer_size = buffer_size
         self.mini_batch_size = mini_batch_size
         self.num_updates = num_updates
         self.save_interval = save_interval
@@ -52,21 +81,20 @@ class _Daemon(threading.Thread):
         self.loss_buffer = loss_buffer
         self.local_num_steps = loss_buffer.shape[0]
 
-        self.buffer_size_ones = torch.ones(self.buffer_size)
-        self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
-
-        self.step_count = 0
         self.total_updates = 0
+        self.update_count = 0
+        self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
 
         self.ckpt_dir = osp.join("./checkpoints", f"encoder_{my_rank}")
         os.makedirs(self.ckpt_dir)
 
         # Allocate replay buffer
-        self.buffer = torch.zeros(
-            self.buffer_size, *observation_space.shape, device=self.device
+        self.buffer = ReplayBuffer(
+            buffer_size, observation_space.shape, torch.device("cpu")
         )
 
         # Create SimCLR transformation
+        # NOTE: These are non-parametric transforms, so there is nothing to move to GPU
         transforms = torch.nn.Sequential(
             # Normalize observations into [0, 1] range as required for floats
             torchvision.transforms.Normalize([0.0, 0.0, 0.0], [255.0, 255.0, 255.0]),
@@ -79,7 +107,7 @@ class _Daemon(threading.Thread):
                 p=0.8,
             ),
             torchvision.transforms.RandomGrayscale(p=0.2),
-        ).to(self.device, non_blocking=True)
+        )
         self.scripted_transforms = torch.jit.script(transforms)
 
         # Create SimCLR encoder
@@ -103,52 +131,44 @@ class _Daemon(threading.Thread):
     def run(self):
         while True:
             cmd = self.commands_queue.get()
-            if cmd.name == "NEW_OBS":
-                obs = cmd.data
-                if self.step_count < self.buffer_size:
-                    self.buffer[self.step_count].copy_(
-                        torch.from_numpy(obs), non_blocking=True
-                    )
-                else:
-                    # Replace a random buffer's element with the observation
-                    ptr = torch.randint(self.buffer_size, size=(1,))
-                    self.buffer[ptr].copy_(torch.from_numpy(obs), non_blocking=True)
-
+            if cmd.name == "NEW_OBS_UPDATE":
+                self.buffer.insert(cmd.obs)
+                try:
                     # Run fractional, only one, or multiple SimCLR updates
                     num_updates = (
                         self.num_updates
                         if self.num_updates >= 1
-                        else int(
-                            (self.step_count - self.buffer_size) % self.update_every
-                            == 0
-                        )
+                        else int(self.update_count % self.update_every == 0)
                     )
                     for _ in range(0, num_updates):
-                        # Sample mini batch (without replacement)
-                        idxs = self.buffer_size_ones.multinomial(self.mini_batch_size)
-                        mini_batch = self.buffer[idxs]
+                        mini_batch = self.buffer.sample(self.mini_batch_size)
 
                         # TODO: Should we use the loss after the update as the reward signal?
                         x_i, x_j = self.transform_batch(mini_batch)
-                        loss, _ = self.compute_loss(x_i, x_j)
+                        loss, _ = self.compute_loss(
+                            x_i.to(self.device), x_j.to(self.device)
+                        )
 
                         self.optimizer.zero_grad()
                         loss.backward()
                         self.optimizer.step()
+
                     self.total_updates += num_updates
+                    self.update_count += 1
 
                     if num_updates > 0:
                         with torch.no_grad():
                             self.loss_buffer[
-                                self.step_count % self.local_num_steps
+                                cmd.step_count % self.local_num_steps
                             ].copy_(loss, non_blocking=True)
 
                             # TODO: Log the last conf. matrix (only last as it's quite big).
 
                         # Checkpoint
                         if self.total_updates % self.save_interval == 0:
-                            self.save_checkpoint(self.step_count + 1)
-                self.step_count += 1
+                            self.save_checkpoint(cmd.step_count + 1)
+                except RuntimeWarning:
+                    pass
             elif cmd.name == "SIGNAL_READY":
                 self.loss_ready.wait()
             elif cmd.name == "CLOSE":
@@ -251,7 +271,7 @@ class TrainSimCLR(gym.Wrapper):
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
 
-        self.commands_queue.put_nowait(_Command("NEW_OBS", obs))
+        self.commands_queue.put_nowait(_Command("NEW_OBS_UPDATE", self.step_count, obs))
         self.step_count += 1
 
         if self.step_count % self.local_num_steps == 0:

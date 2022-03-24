@@ -34,8 +34,8 @@ def main(cfg):
 
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed_all(cfg.seed)
-    # Is it required?
-    torch.set_num_threads(1)
+    # NOTE: Without limiting number of threads, we can bottleneck in CPU compute
+    torch.set_num_threads(2)
 
     device = torch.device("cuda:0" if cfg.training.cuda else "cpu")
 
