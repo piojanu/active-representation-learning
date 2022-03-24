@@ -10,7 +10,7 @@ import torchvision
 from simclr.simclr import SimCLR
 
 from algos.simclr import NT_Xent
-from models.convnet import ConvNetEncoder
+from nets.convnet import ConvNetEncoder
 
 _Command = namedtuple("Command", ["name", "data"], defaults=[None])
 

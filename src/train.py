@@ -7,17 +7,18 @@ import hydra
 import torch
 from omegaconf import OmegaConf
 
-from algos.dummy import DummyAgent
-from algos.ppo import PPO, ActorCritic
-from envs import make_vec_env
-from models.baselines import (
+# trunk-ignore(flake8/F401)
+import envs
+from algos.ppo import PPO, ActorCritic, RolloutStorage
+from algos.ppo.actor_critic import (
     ConstantActorCritic,
     RandomActorCritic,
     RandomRepeatActorCritic,
 )
+from algos.ppo.agent import DummyAgent
 from utils.logx import EpochLogger
 from utils.namesgenerator import get_random_name
-from utils.storage import RolloutStorage
+from utils.vecenvs import make_vec_env
 
 OBS_WIDTH = 26
 OBS_HEIGHT = 26

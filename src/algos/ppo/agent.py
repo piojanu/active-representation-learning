@@ -127,3 +127,9 @@ class PPO:
             ApproxKL=approx_kl.item(),
             PPOUpdates=total_updates,
         )
+
+
+class DummyAgent:
+    def update(self, rollouts):
+        del rollouts
+        return {}
