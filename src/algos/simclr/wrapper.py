@@ -12,7 +12,7 @@ from simclr.simclr import SimCLR
 from algos.simclr import NT_Xent
 from nets.convnet import ConvNetEncoder
 
-_Command = namedtuple("Command", ["name", "step_count", "obs"], defaults=[None, None])
+_Command = namedtuple("Command", ["name", "total_steps", "obs"], defaults=[None, None])
 
 
 class ReplayBuffer:
@@ -68,6 +68,7 @@ class _Daemon(threading.Thread):
     ):
         super().__init__(daemon=True)
         del log_interval
+        assert num_updates >= 1
 
         self.mini_batch_size = mini_batch_size
         self.num_updates = num_updates
@@ -82,8 +83,6 @@ class _Daemon(threading.Thread):
         self.local_num_steps = loss_buffer.shape[0]
 
         self.total_updates = 0
-        self.update_count = 0
-        self.update_every = 1 / self.num_updates if self.num_updates < 1 else None
 
         self.ckpt_dir = osp.join("./checkpoints", f"encoder_{my_rank}")
         os.makedirs(self.ckpt_dir)
@@ -135,12 +134,7 @@ class _Daemon(threading.Thread):
                 self.buffer.insert(cmd.obs)
                 try:
                     # Run fractional, only one, or multiple SimCLR updates
-                    num_updates = (
-                        self.num_updates
-                        if self.num_updates >= 1
-                        else int(self.update_count % self.update_every == 0)
-                    )
-                    for _ in range(0, num_updates):
+                    for _ in range(0, self.num_updates):
                         mini_batch = self.buffer.sample(self.mini_batch_size)
 
                         # TODO: Should we use the loss after the update as the reward signal?
@@ -152,21 +146,18 @@ class _Daemon(threading.Thread):
                         self.optimizer.zero_grad()
                         loss.backward()
                         self.optimizer.step()
+                    self.total_updates += self.num_updates
 
-                    self.total_updates += num_updates
-                    self.update_count += 1
+                    with torch.no_grad():
+                        self.loss_buffer[cmd.total_steps % self.local_num_steps].copy_(
+                            loss, non_blocking=True
+                        )
 
-                    if num_updates > 0:
-                        with torch.no_grad():
-                            self.loss_buffer[
-                                cmd.step_count % self.local_num_steps
-                            ].copy_(loss, non_blocking=True)
+                        # TODO: Log the last conf. matrix (only last as it's quite big).
 
-                            # TODO: Log the last conf. matrix (only last as it's quite big).
-
-                        # Checkpoint
-                        if self.total_updates % self.save_interval == 0:
-                            self.save_checkpoint(cmd.step_count + 1)
+                    # Checkpoint
+                    if self.total_updates % self.save_interval == 0:
+                        self.save_checkpoint(cmd.total_steps + 1)
                 except RuntimeWarning:
                     pass
             elif cmd.name == "SIGNAL_READY":
@@ -266,21 +257,23 @@ class TrainSimCLR(gym.Wrapper):
         self.buffer_size = buffer_size
         self.num_updates = num_updates
 
-        self.step_count = 0
+        self.total_steps = 0
 
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
 
-        self.commands_queue.put_nowait(_Command("NEW_OBS_UPDATE", self.step_count, obs))
-        self.step_count += 1
+        self.commands_queue.put_nowait(
+            _Command("NEW_OBS_UPDATE", self.total_steps, obs)
+        )
+        self.total_steps += 1
 
-        if self.step_count % self.local_num_steps == 0:
+        if self.total_steps % self.local_num_steps == 0:
             self.commands_queue.put_nowait(_Command("SIGNAL_READY"))
             self.loss_ready.wait()
 
             info["encoder"] = dict(
                 losses=self.loss_buffer.tolist(),
-                total_updates=max(0, self.step_count - self.buffer_size)
+                total_updates=max(0, self.total_steps - self.buffer_size)
                 * self.num_updates,
             )
 
