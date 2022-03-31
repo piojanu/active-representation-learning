@@ -295,6 +295,9 @@ def main(cfg):
         if (local_step + 1) % local_num_steps == 0:
             rollouts.after_update()
 
+    # Cleaning!
+    env.close()
+
 
 if __name__ == "__main__":
     try:
