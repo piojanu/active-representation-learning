@@ -10,11 +10,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/src/train.py",
       "cwd": "${workspaceFolder}/src/",
-      "args": [
-        "--mock",
-        "training.num_processes=1",
-        "+experiment=10k_steps_in_lookatobjs"
-      ],
+      "args": ["+experiment=10k_steps_in_lookatobjs", "+platform=debug"],
       "env": {
         "SCRATCH_SPACE": "/tmp"
       },
