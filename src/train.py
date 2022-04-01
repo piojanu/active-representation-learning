@@ -301,10 +301,10 @@ def main(cfg):
 
 if __name__ == "__main__":
     try:
-        sys.argv.remove("--mock")
-        is_mock = True
-    except ValueError:
+        sys.argv.remove("--tag")
         is_mock = False
+    except ValueError:
+        is_mock = True
 
     try:
         idx = sys.argv.index("--resume")
