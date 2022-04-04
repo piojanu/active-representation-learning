@@ -29,17 +29,22 @@ class _Dataset(torch.utils.data.IterableDataset):
         self.buffer_size = buffer_shape[0]
         self.transforms = transforms
 
+        self.scripted_transforms = None
         # Allocate shared memory buffer for observations
         self.buffer = torch.empty(buffer_shape).share_memory_()
 
     def __iter__(self):
+        if self.scripted_transforms is None:
+            # NOTE: This boosts the performance by ~1.5x steps/sec
+            self.scripted_transforms = torch.jit.script(self.transforms)
+
         return self
 
     def __next__(self):
         sample = self.buffer[torch.randint(self.buffer_size, size=(1,))]
 
-        x_i = self.transforms(sample)
-        x_j = self.transforms(sample)
+        x_i = self.scripted_transforms(sample)
+        x_j = self.scripted_transforms(sample)
 
         return (x_i, x_j)
 
@@ -118,12 +123,12 @@ class _Worker(threading.Thread):
         self.data_loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=mini_batch_size,
-            num_workers=2,
+            num_workers=4,
             collate_fn=collate_batch_of_pairs,
             pin_memory=True,
-            # NOTE: This can't be too big as prefetch is done on the old data
-            # TODO: Check how many samples does get prefetched
-            prefetch_factor=mini_batch_size,
+            # NOTE: Preprocessing is a bottleneck so prefetching more doesn't make any difference
+            #       Moreover, this can't be too big as prefetch is done on the old data
+            prefetch_factor=2,
             persistent_workers=True,
         )
         self.data_iter = None
