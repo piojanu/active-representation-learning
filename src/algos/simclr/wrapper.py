@@ -13,25 +13,36 @@ from nets.convnet import ConvNetEncoder
 
 
 def collate_batch_of_pairs(batch):
-    # Transpose to place the batch dim. as second
-    x_i, x_j = list(map(list, zip(*batch)))
-    return torch.concat(x_i), torch.concat(x_j)
+    # Place the batch dim. as second
+    return torch.stack(batch, dim=1)
 
 
 class _Dataset(torch.utils.data.IterableDataset):
-    def __init__(self, buffer_shape, transforms):
+    def __init__(self, buffer_shape, transforms, preproc_ratio):
         """Dataset sampling from the shared memory buffer which alters its content
 
         Args:
           buffer_shape (tuple): observations buffer shape (<buff. size>, *<obs. shape>).
           transforms (callable): transforms to apply to observations.
+          preproc_ratio (float): probability of applying preprocessing to sampled
+            observation. Otherwise, the pair is returned from the cache.
         """
         self.buffer_size = buffer_shape[0]
         self.transforms = transforms
+        self.preproc_ratio = preproc_ratio
 
-        self.scripted_transforms = None
         # Allocate shared memory buffer for observations
         self.buffer = torch.empty(buffer_shape).share_memory_()
+        self.buffer_checksum = torch.ones(
+            self.buffer_size, dtype=torch.int
+        ).share_memory_()
+
+        # Cache for transformed pairs, private to each worker
+        self.cache = torch.empty(self.buffer_size, 2, *buffer_shape[1:])
+        # Must be different than the buffer checksum so it starts from the invalid state
+        self.cache_checksum = torch.zeros(self.buffer_size, dtype=torch.int)
+
+        self.scripted_transforms = None
 
     def __iter__(self):
         if self.scripted_transforms is None:
@@ -41,19 +52,33 @@ class _Dataset(torch.utils.data.IterableDataset):
         return self
 
     def __next__(self):
-        sample = self.buffer[torch.randint(self.buffer_size, size=(1,))]
+        ptr = torch.randint(self.buffer_size, size=(1,)).item()
 
-        x_i = self.scripted_transforms(sample)
-        x_j = self.scripted_transforms(sample)
+        if (
+            torch.rand(1) < self.preproc_ratio
+            or self.cache_checksum[ptr] != self.buffer_checksum[ptr]
+        ):
+            self.fill_cache(ptr)
 
-        return (x_i, x_j)
+        return self.cache[ptr]
+
+    def fill_cache(self, ptr):
+        """Fills cache with the transformed pair at the index `ptr`."""
+        x_i = self.scripted_transforms(self.buffer[ptr])
+        x_j = self.scripted_transforms(self.buffer[ptr])
+
+        self.cache[ptr] = torch.stack([x_i, x_j])
+        self.cache_checksum[ptr] = self.buffer_checksum[ptr]
 
     def insert(self, obs, ptr=None):
         if ptr is None:
             # Replace a random buffer's element with the new observation
-            ptr = torch.randint(self.buffer_size, size=(1,))
-        # NOTE: Possible race condition here: prefetching reading while you write here
+            ptr = torch.randint(self.buffer_size, size=(1,)).item()
+        # NOTE: Possible race condition here: prefetching partially written or currently
+        #       being written observation. Shouldn't be common because of random write
+        #       and read indexes.
         self.buffer[ptr].copy_(torch.from_numpy(obs))
+        self.buffer_checksum[ptr] += 1
 
 
 class _Worker(threading.Thread):
@@ -66,6 +91,7 @@ class _Worker(threading.Thread):
         learning_rate,
         mini_batch_size,
         num_updates,
+        preproc_ratio,
         log_interval,
         save_interval,
         # World params
@@ -119,16 +145,18 @@ class _Worker(threading.Thread):
         self.dataset = _Dataset(
             (buffer_size,) + observation_shape,
             transforms,
+            preproc_ratio,
         )
         self.data_loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=mini_batch_size,
-            num_workers=4,
+            num_workers=3,
             collate_fn=collate_batch_of_pairs,
             pin_memory=True,
-            # NOTE: Preprocessing is a bottleneck so prefetching more doesn't make any difference
-            #       Moreover, this can't be too big as prefetch is done on the old data
-            prefetch_factor=2,
+            # NOTE: Preprocessing is a bottleneck so prefetching more doesn't make much
+            #       difference. Moreover, this can't be too big as prefetch is done on
+            #       the old data and the new data is being written to the buffer.
+            prefetch_factor=mini_batch_size // 2,
             persistent_workers=True,
         )
         self.data_iter = None
@@ -170,11 +198,10 @@ class _Worker(threading.Thread):
                     self.data_iter = iter(self.data_loader)
 
                 for _ in range(self.num_updates):
-                    x_i, x_j = next(self.data_iter)
+                    batch = next(self.data_iter)
                     loss, _ = self.compute_loss(
                         # NOTE: If you won't block here, then CUDA goes out of memory
-                        x_i.to(self.device, non_blocking=False),
-                        x_j.to(self.device, non_blocking=False),
+                        batch.to(self.device, non_blocking=False)
                     )
 
                     self.optimizer.zero_grad()
@@ -195,9 +222,11 @@ class _Worker(threading.Thread):
                 if self.total_steps % self.local_num_steps == 0:
                     self.loss_ready.wait()
 
-    def compute_loss(self, x_i, x_j):
+    def compute_loss(self, batch):
+        x_i, x_j = batch[0], batch[1]
+
         # TODO: You might want to concat. the positive pair into a single batch
-        #       for better performance. Same with the transformations.
+        #       for better performance.
         _, _, z_i, z_j = self.model(x_i, x_j)
 
         return self.criterion(z_i, z_j)
@@ -236,6 +265,7 @@ class TrainSimCLR(gym.Wrapper):
         learning_rate,
         mini_batch_size,
         num_updates,
+        preproc_ratio,
         log_interval,
         save_interval,
     ):
@@ -261,6 +291,7 @@ class TrainSimCLR(gym.Wrapper):
             learning_rate=learning_rate,
             mini_batch_size=mini_batch_size,
             num_updates=num_updates,
+            preproc_ratio=preproc_ratio,
             log_interval=log_interval,
             save_interval=save_interval,
             my_rank=my_rank,

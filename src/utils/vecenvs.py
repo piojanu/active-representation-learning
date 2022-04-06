@@ -54,6 +54,7 @@ def make_env(
                 learning_rate=encoder_cfg.training.learning_rate,
                 mini_batch_size=encoder_cfg.training.mini_batch_size,
                 num_updates=encoder_cfg.training.num_updates,
+                preproc_ratio=encoder_cfg.training.preproc_ratio,
                 log_interval=encoder_cfg.logging.log_interval,
                 save_interval=encoder_cfg.logging.save_interval,
             )
