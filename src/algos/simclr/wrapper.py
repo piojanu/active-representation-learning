@@ -42,6 +42,7 @@ class _Dataset(torch.utils.data.IterableDataset):
         # Must be different than the buffer checksum so it starts from the invalid state
         self.cache_checksum = torch.zeros(self.buffer_size, dtype=torch.int)
 
+        self.indices = []
         self.scripted_transforms = None
 
     def __iter__(self):
@@ -52,7 +53,11 @@ class _Dataset(torch.utils.data.IterableDataset):
         return self
 
     def __next__(self):
-        ptr = torch.randint(self.buffer_size, size=(1,)).item()
+        if len(self.indices) == 0:
+            self.indices = torch.randperm(self.buffer_size).tolist()
+        # NOTE: It's okay for ptr-s to repeat across workers, because each one holds
+        #       a private cache with differently transformed pairs.
+        ptr = self.indices.pop()
 
         if (
             torch.rand(1) < self.preproc_ratio
@@ -76,7 +81,7 @@ class _Dataset(torch.utils.data.IterableDataset):
             ptr = torch.randint(self.buffer_size, size=(1,)).item()
         # NOTE: Possible race condition here: prefetching partially written or currently
         #       being written observation. Shouldn't be common because of random write
-        #       and read indexes.
+        #       and read indices.
         self.buffer[ptr].copy_(torch.from_numpy(obs))
         self.buffer_checksum[ptr] += 1
 
