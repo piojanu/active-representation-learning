@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - override /agent: constant
+  - override /encoder: simclr
+
+encoder:
+  training:
+    num_updates: 1 # 1 update per step
+env: MiniWorld-LookAtObjs-v0
+training:
+  num_processes: 8
+  num_steps: 2000
+  total_steps: 8e5 # 100k steps for each of 8 environments
