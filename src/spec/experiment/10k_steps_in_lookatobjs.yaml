@@ -3,6 +3,9 @@ defaults:
   - override /agent: constant
   - override /encoder: simclr
 
+encoder:
+  logging:
+    save_interval: 1
 env: MiniWorld-LookAtObjs-v0
 training:
   num_processes: 8

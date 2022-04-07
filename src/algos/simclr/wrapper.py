@@ -100,7 +100,7 @@ class _Worker(threading.Thread):
         log_interval,
         save_interval,
         # World params
-        local_num_steps,  # Return info when it's needed for an agent update
+        local_num_steps,
         my_rank,
         num_processes,
         device_name,
@@ -114,7 +114,7 @@ class _Worker(threading.Thread):
         self.buffer_size = buffer_size
         self.num_updates = num_updates
         self.local_log_interval = log_interval * local_num_steps
-        self.save_interval = save_interval
+        self.local_save_interval = save_interval * local_num_steps
 
         self.local_num_steps = local_num_steps
         self.num_processes = num_processes
@@ -194,10 +194,10 @@ class _Worker(threading.Thread):
 
             if self.total_steps < self.buffer_size:
                 self.dataset.insert(new_obs, self.total_steps)
-
                 self.total_steps += 1
             else:
                 self.dataset.insert(new_obs)
+                self.total_steps += 1
 
                 if self.data_iter is None:
                     # NOTE: Prefetching starts after you call `iter` on the data loader
@@ -214,17 +214,17 @@ class _Worker(threading.Thread):
                     loss.backward()
                     self.optimizer.step()
 
-                self.total_steps += 1
-                total_updates = (self.total_steps - self.buffer_size) * self.num_updates
-
                 with torch.no_grad():
                     self.losses[self.total_steps % self.local_num_steps].copy_(
                         loss, non_blocking=True
                     )
 
+                # Return info when it's needed for an agent update
                 if self.total_steps % self.local_num_steps == 0:
                     info = dict(
-                        losses=self.losses.tolist(), total_updates=total_updates
+                        losses=self.losses.tolist(),
+                        total_updates=(self.total_steps - self.buffer_size)
+                        * self.num_updates,
                     )
 
                     # Send these big matrices and images only when it's time for logging
@@ -236,7 +236,7 @@ class _Worker(threading.Thread):
 
                     self.info_queue.put_nowait(info)
 
-                if total_updates % self.save_interval == 0:
+                if self.total_steps % self.local_save_interval == 0:
                     self.save_checkpoint(self.total_steps)
 
     def compute_loss(self, batch):

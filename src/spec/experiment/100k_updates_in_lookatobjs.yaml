@@ -4,6 +4,8 @@ defaults:
   - override /encoder: simclr
 
 encoder:
+  logging:
+    save_interval: 5 # Save every M policy iterations
   training:
     num_updates: 1 # 1 update per step
 env: MiniWorld-LookAtObjs-v0
