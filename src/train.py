@@ -4,6 +4,7 @@ import sys
 import time
 
 import hydra
+import numpy as np
 import torch
 from omegaconf import OmegaConf
 
@@ -233,6 +234,22 @@ def main(cfg):
             and (local_step + 1) % local_encoder_log_interval == 0
         ):
             dump_logs = True
+
+            if "last_batch" in infos[0]["encoder"].keys():
+                for idx, info in enumerate(infos):
+                    # Transpose so pairs are next to each other
+                    last_batch = np.swapaxes(info["encoder"]["last_batch"], 0, 1)
+                    # Flatten the pair and batch dimensions
+                    last_batch = np.reshape(last_batch, (-1,) + last_batch.shape[2:])
+
+                    logger.writer.add_images(
+                        f"LastBatch/E{idx}",
+                        last_batch,
+                        global_step_plus_one,
+                    )
+                    logger.log_heatmap(
+                        f"ConfusionMatrix/E{idx}", info["encoder"]["confusion_matrix"]
+                    )
 
             logger.log_tabular("LossEncoder")
             logger.log_tabular(

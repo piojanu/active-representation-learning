@@ -97,9 +97,10 @@ class _Worker(threading.Thread):
         mini_batch_size,
         num_updates,
         preproc_ratio,
-        local_num_steps,  # Return info when it's needed for an agent update
+        log_interval,
         save_interval,
         # World params
+        local_num_steps,  # Return info when it's needed for an agent update
         my_rank,
         num_processes,
         device_name,
@@ -112,9 +113,10 @@ class _Worker(threading.Thread):
 
         self.buffer_size = buffer_size
         self.num_updates = num_updates
-        self.local_num_steps = local_num_steps
+        self.local_log_interval = log_interval * local_num_steps
         self.save_interval = save_interval
 
+        self.local_num_steps = local_num_steps
         self.num_processes = num_processes
         self.device = torch.device(device_name)
 
@@ -203,7 +205,7 @@ class _Worker(threading.Thread):
 
                 for _ in range(self.num_updates):
                     batch = next(self.data_iter)
-                    loss, _ = self.compute_loss(
+                    loss, confusion_matrix = self.compute_loss(
                         # NOTE: If you won't block here, then CUDA goes out of memory
                         batch.to(self.device, non_blocking=False)
                     )
@@ -213,23 +215,29 @@ class _Worker(threading.Thread):
                     self.optimizer.step()
 
                 self.total_steps += 1
-                local_step = self.total_steps % self.local_num_steps
                 total_updates = (self.total_steps - self.buffer_size) * self.num_updates
 
                 with torch.no_grad():
-                    self.losses[local_step].copy_(loss, non_blocking=True)
-                    # TODO: Log the last conf. matrix (only last as it's quite big).
-
-                if self.total_steps % self.local_num_steps == 0:
-                    self.info_queue.put_nowait(
-                        {
-                            "losses": self.losses.tolist(),
-                            "total_updates": total_updates,
-                        }
+                    self.losses[self.total_steps % self.local_num_steps].copy_(
+                        loss, non_blocking=True
                     )
 
+                if self.total_steps % self.local_num_steps == 0:
+                    info = dict(
+                        losses=self.losses.tolist(), total_updates=total_updates
+                    )
+
+                    # Send these big matrices and images only when it's time for logging
+                    # NOTE: Logging images is very heavy and limits steps per seconds
+                    #       even by 15%! That's why we log them less often.
+                    if self.total_steps % (self.local_log_interval * 10) == 0:
+                        info["confusion_matrix"] = confusion_matrix
+                        info["last_batch"] = batch.numpy()
+
+                    self.info_queue.put_nowait(info)
+
                 if total_updates % self.save_interval == 0:
-                    self.save_checkpoint(self.total_steps + 1)
+                    self.save_checkpoint(self.total_steps)
 
     def compute_loss(self, batch):
         x_i, x_j = batch[0], batch[1]
@@ -279,7 +287,6 @@ class TrainSimCLR(gym.Wrapper):
         save_interval,
     ):
         super().__init__(env)
-        del log_interval
 
         torch.manual_seed(seed + my_rank)
         torch.cuda.manual_seed_all(seed + my_rank)
@@ -299,8 +306,9 @@ class TrainSimCLR(gym.Wrapper):
             mini_batch_size=mini_batch_size,
             num_updates=num_updates,
             preproc_ratio=preproc_ratio,
-            local_num_steps=local_num_steps,
+            log_interval=log_interval,
             save_interval=save_interval,
+            local_num_steps=local_num_steps,
             my_rank=my_rank,
             num_processes=num_processes,
             device_name=device_name,
