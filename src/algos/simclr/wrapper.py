@@ -205,7 +205,7 @@ class _Worker(threading.Thread):
 
                 for _ in range(self.num_updates):
                     batch = next(self.data_iter)
-                    loss, confusion_matrix = self.compute_loss(
+                    loss, conf_matrix = self.compute_loss(
                         # NOTE: If you won't block here, then CUDA goes out of memory
                         batch.to(self.device, non_blocking=False)
                     )
@@ -231,7 +231,7 @@ class _Worker(threading.Thread):
                     # NOTE: Logging images is very heavy and limits steps per seconds
                     #       even by 15%! That's why we log them less often.
                     if self.total_steps % (self.local_log_interval * 10) == 0:
-                        info["confusion_matrix"] = confusion_matrix
+                        info["confusion_matrix"] = conf_matrix.detach().cpu().numpy()
                         info["last_batch"] = batch.numpy()
 
                     self.info_queue.put_nowait(info)

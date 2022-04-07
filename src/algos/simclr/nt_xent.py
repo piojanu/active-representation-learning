@@ -47,4 +47,4 @@ class NT_Xent(nn.Module):
         logits = torch.cat((positive_samples, negative_samples), dim=1)
         loss = self.criterion(logits, labels)
         loss /= N
-        return loss, sim.detach().cpu().numpy()
+        return loss, sim
