@@ -252,9 +252,7 @@ def main(cfg):
                     )
 
             logger.log_tabular("LossEncoder")
-            logger.log_tabular(
-                "EncoderUpdates", average_only=True, with_min_and_max=True
-            )
+            logger.log_tabular("EncoderUpdates", average_only=True)
 
         # If it's time to log agent...
         if (
