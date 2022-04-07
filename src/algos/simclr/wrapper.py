@@ -280,7 +280,7 @@ class TrainSimCLR(gym.Wrapper):
         torch.cuda.manual_seed_all(seed + my_rank)
 
         # NOTE: Without limiting threads number the CPU is the bottleneck
-        torch.set_num_threads(2)
+        torch.set_num_threads(1)
 
         self.obs_queue = queue.SimpleQueue()
         self.loss_buffer = torch.zeros(
