@@ -97,7 +97,7 @@ class _Worker(threading.Thread):
         mini_batch_size,
         num_updates,
         preproc_ratio,
-        log_interval,
+        local_num_steps,  # Return info when it's needed for an agent update
         save_interval,
         # World params
         my_rank,
@@ -105,25 +105,24 @@ class _Worker(threading.Thread):
         device_name,
         # Parent comm
         obs_queue,
-        loss_buffer,
-        loss_ready,
+        info_queue,
     ):
         super().__init__()
-        del log_interval
         assert num_updates >= 1
 
         self.buffer_size = buffer_size
         self.num_updates = num_updates
+        self.local_num_steps = local_num_steps
         self.save_interval = save_interval
 
         self.num_processes = num_processes
         self.device = torch.device(device_name)
 
         self.obs_queue = obs_queue
-        self.loss_buffer = loss_buffer
-        self.loss_ready = loss_ready
+        self.info_queue = info_queue
 
-        self.local_num_steps = loss_buffer.shape[0]
+        self.losses = torch.zeros(local_num_steps, device=self.device)
+
         self.total_updates = 0
         self.total_steps = 0
 
@@ -218,14 +217,19 @@ class _Worker(threading.Thread):
                 total_updates = (self.total_steps - self.buffer_size) * self.num_updates
 
                 with torch.no_grad():
-                    self.loss_buffer[local_step].copy_(loss, non_blocking=True)
+                    self.losses[local_step].copy_(loss, non_blocking=True)
                     # TODO: Log the last conf. matrix (only last as it's quite big).
+
+                if self.total_steps % self.local_num_steps == 0:
+                    self.info_queue.put_nowait(
+                        {
+                            "losses": self.losses.tolist(),
+                            "total_updates": total_updates,
+                        }
+                    )
 
                 if total_updates % self.save_interval == 0:
                     self.save_checkpoint(self.total_steps + 1)
-
-                if self.total_steps % self.local_num_steps == 0:
-                    self.loss_ready.wait()
 
     def compute_loss(self, batch):
         x_i, x_j = batch[0], batch[1]
@@ -275,6 +279,7 @@ class TrainSimCLR(gym.Wrapper):
         save_interval,
     ):
         super().__init__(env)
+        del log_interval
 
         torch.manual_seed(seed + my_rank)
         torch.cuda.manual_seed_all(seed + my_rank)
@@ -283,10 +288,7 @@ class TrainSimCLR(gym.Wrapper):
         torch.set_num_threads(1)
 
         self.obs_queue = queue.SimpleQueue()
-        self.loss_buffer = torch.zeros(
-            local_num_steps, device=torch.device(device_name)
-        )
-        self.loss_ready = threading.Barrier(parties=2)
+        self.info_queue = queue.SimpleQueue()
 
         self.worker = _Worker(
             observation_shape=self.observation_space.shape,
@@ -297,20 +299,18 @@ class TrainSimCLR(gym.Wrapper):
             mini_batch_size=mini_batch_size,
             num_updates=num_updates,
             preproc_ratio=preproc_ratio,
-            log_interval=log_interval,
+            local_num_steps=local_num_steps,
             save_interval=save_interval,
             my_rank=my_rank,
             num_processes=num_processes,
             device_name=device_name,
             obs_queue=self.obs_queue,
-            loss_buffer=self.loss_buffer,
-            loss_ready=self.loss_ready,
+            info_queue=self.info_queue,
         )
         self.worker.start()
 
-        self.local_num_steps = local_num_steps
         self.buffer_size = buffer_size
-        self.num_updates = num_updates
+        self.local_num_steps = local_num_steps
 
         self.total_steps = 0
 
@@ -324,12 +324,7 @@ class TrainSimCLR(gym.Wrapper):
             self.total_steps >= self.buffer_size
             and self.total_steps % self.local_num_steps == 0
         ):
-            self.loss_ready.wait()
-
-            info["encoder"] = dict(
-                losses=self.loss_buffer.tolist(),
-                total_updates=(self.total_steps - self.buffer_size) * self.num_updates,
-            )
+            info["encoder"] = self.info_queue.get()
 
         return obs, rew, done, info
 
