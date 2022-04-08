@@ -136,11 +136,13 @@ class _Worker(threading.Thread):
         transforms = torch.nn.Sequential(
             # Normalize observations into [0, 1] range as required for floats
             torchvision.transforms.Normalize([0.0, 0.0, 0.0], [255.0, 255.0, 255.0]),
-            torchvision.transforms.RandomResizedCrop(size=observation_shape[1:]),
+            torchvision.transforms.RandomResizedCrop(
+                size=observation_shape[1:], scale=(0.5, 1.0)
+            ),
             torchvision.transforms.RandomHorizontalFlip(p=0.5),
             torchvision.transforms.RandomApply(
                 torch.nn.ModuleList(
-                    [torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)]
+                    [torchvision.transforms.ColorJitter(0.3, 0.5, 0.5, 0.2)]
                 ),
                 p=0.8,
             ),
