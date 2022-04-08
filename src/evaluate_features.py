@@ -98,7 +98,9 @@ def worker(key_n_encoder_dir):
     ]
 
     accuracies = []
-    for step, path in ckpt_paths:
+    for i, (step, path) in enumerate(ckpt_paths):
+        print(f"[{key}] Processing  {i}/{len(ckpt_paths)}")
+
         # The encoder state dict is at the position zero
         encoder.load_state_dict(torch.load(path, map_location=device)[0])
 
