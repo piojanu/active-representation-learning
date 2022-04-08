@@ -315,14 +315,18 @@ def main(cfg):
 
 
 if __name__ == "__main__":
+    is_mock = True
+    resume_name = None
+
     try:
         sys.argv.remove("--tag")
         is_mock = False
     except ValueError:
-        is_mock = True
+        pass
 
     try:
         idx = sys.argv.index("--resume")
+        is_mock = False
         resume_name = sys.argv[idx + 1]
 
         # Remove the argument
@@ -330,7 +334,7 @@ if __name__ == "__main__":
         # Remove its value
         del sys.argv[idx]
     except ValueError:
-        resume_name = None
+        pass
 
     # Get the run name
     if is_mock:
