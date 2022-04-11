@@ -68,10 +68,19 @@ class LookAtObjs(MiniWorldEnv):
     Room with multiple objects in which the agent can only turn around.
     """
 
-    def __init__(self, num_objs=5, **kwargs):
-        self.size = 10
+    def __init__(self, max_angle=2 * math.pi, num_objs=5, **kwargs):
         self.num_objs = num_objs
-        self.revolution_step = (2 * math.pi) / self.num_objs
+
+        if max_angle == 2 * math.pi:  # For a full circle
+            # Distribute across [0, 2pi[, right-open interval, so items don't overlay
+            self.revolution_step = max_angle / self.num_objs
+        elif max_angle < 2 * math.pi:  # For a partial circle
+            # Distribute across [0, max_angle], right-closed interval
+            self.revolution_step = max_angle / (self.num_objs - 1)
+        else:
+            raise ValueError("max_angle must be lower or equal 2pi")
+
+        self.size = 10
 
         super().__init__(max_episode_steps=math.inf, **kwargs)
 
