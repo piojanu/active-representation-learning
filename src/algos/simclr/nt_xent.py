@@ -34,7 +34,8 @@ class NT_Xent(nn.Module):
         if self.world_size > 1:
             z = torch.cat(GatherLayer.apply(z), dim=0)
 
-        sim = self.similarity_f(z.unsqueeze(1), z.unsqueeze(0)) / self.temperature
+        conf_matrix = self.similarity_f(z.unsqueeze(1), z.unsqueeze(0))
+        sim = conf_matrix / self.temperature
 
         sim_i_j = torch.diag(sim, self.batch_size * self.world_size)
         sim_j_i = torch.diag(sim, -self.batch_size * self.world_size)
@@ -47,4 +48,4 @@ class NT_Xent(nn.Module):
         logits = torch.cat((positive_samples, negative_samples), dim=1)
         loss = self.criterion(logits, labels)
         loss /= N
-        return loss, sim
+        return loss, conf_matrix.detach()

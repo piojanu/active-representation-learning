@@ -233,7 +233,7 @@ class _Worker(threading.Thread):
                     # NOTE: Logging images is very heavy and limits steps per seconds
                     #       even by 15%! That's why we log them less often.
                     if self.total_steps % (self.local_log_interval * 10) == 0:
-                        info["confusion_matrix"] = conf_matrix.detach().cpu().numpy()
+                        info["confusion_matrix"] = conf_matrix.cpu().numpy()
                         info["last_batch"] = batch.numpy()
 
                     self.info_queue.put_nowait(info)
