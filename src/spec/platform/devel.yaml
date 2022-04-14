@@ -3,3 +3,4 @@
 training:
   cuda: False
   num_processes: 4
+  num_steps: 1024
