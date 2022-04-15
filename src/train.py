@@ -21,8 +21,8 @@ from utils.logx import EpochLogger
 from utils.namesgenerator import get_random_name
 from utils.vecenvs import make_vec_env
 
-OBS_WIDTH = 26
-OBS_HEIGHT = 26
+OBS_WIDTH = 64
+OBS_HEIGHT = 64
 
 
 @hydra.main(config_path="spec", config_name="config")
@@ -52,6 +52,7 @@ def main(cfg):
         cfg.training.num_processes,
         device=device,
         seed=cfg.seed,
+        agent_obs_size=(26, 26),
         encoder_cfg=cfg.encoder,
         gym_kwargs=dict(obs_width=OBS_WIDTH, obs_height=OBS_HEIGHT),
     )

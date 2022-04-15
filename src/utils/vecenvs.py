@@ -68,7 +68,14 @@ def make_env(
 
 
 def make_vec_env(
-    env_name, local_num_steps, num_processes, device, seed, encoder_cfg, gym_kwargs
+    env_name,
+    local_num_steps,
+    num_processes,
+    device,
+    seed,
+    agent_obs_size,
+    encoder_cfg,
+    gym_kwargs,
 ):
     if num_processes > 1:
         env = SubprocVecEnv(
@@ -100,6 +107,7 @@ def make_vec_env(
             ]
         )
     env = PyTorchToDevice(env, device)
+    env = PyTorchResizeObs(env, agent_obs_size)
 
     return env
 

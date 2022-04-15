@@ -9,7 +9,7 @@ import torchvision
 from simclr.simclr import SimCLR
 
 from algos.simclr import NT_Xent
-from nets.convnet import ConvNetEncoder
+from nets.resnet import ResNetEncoder
 
 
 def collate_batch_of_pairs(batch):
@@ -168,8 +168,8 @@ class _Worker(threading.Thread):
         self.data_iter = None
 
         # Create SimCLR encoder
-        n_features = 128
-        self.encoder = ConvNetEncoder(n_features)
+        self.encoder = ResNetEncoder(layers=[2, 2])
+        n_features = self.encoder(torch.randn(1, *observation_shape)).shape[1]
         self.encoder.to(self.device, non_blocking=True)
 
         # Create SimCLR projector
