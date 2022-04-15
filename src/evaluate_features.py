@@ -12,8 +12,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 from torch.utils.tensorboard import SummaryWriter
 
-from train import OBS_HEIGHT, OBS_WIDTH
-
 MAX_WORKERS = 8
 
 
@@ -85,7 +83,6 @@ def init_worker(data_path, delta_):
             )
             / 255.0
         )
-        assert list(train_frames.shape[1:]) == [3, OBS_HEIGHT, OBS_WIDTH]
 
         global train_labels
         train_labels = data["train_labels"]
@@ -98,7 +95,6 @@ def init_worker(data_path, delta_):
             )
             / 255.0
         )
-        assert list(test_frames.shape[1:]) == [3, OBS_HEIGHT, OBS_WIDTH]
 
         global test_labels
         test_labels = data["test_labels"]
