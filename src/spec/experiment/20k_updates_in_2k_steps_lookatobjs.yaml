@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - override /agent: constant
+  - override /encoder: simclr
+
+encoder:
+  logging:
+    # Log every 1 * 2000 steps / 8 processes * 10 updates = 2500 updates
+    log_interval: 1
+    # Save every 2 * 2000 steps / 8 processes * 10 updates = 5000 updates
+    save_interval: 2
+  training:
+    num_updates: 10 # 10 updates per step * 2k steps = 20k updates
+    preproc_ratio: 0.5
+env: MiniWorld-LookAtObjs-v0
+training:
+  num_processes: 8
+  num_steps: 2000
+  total_steps: 16e3 # 2k steps for each of 8 environments
