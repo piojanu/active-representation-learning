@@ -21,8 +21,8 @@ from utils.logx import EpochLogger
 from utils.namesgenerator import get_random_name
 from utils.vecenvs import make_vec_env
 
-OBS_WIDTH = 64
-OBS_HEIGHT = 64
+OBS_WIDTH = 48
+OBS_HEIGHT = 48
 
 
 @hydra.main(config_path="spec", config_name="config")
