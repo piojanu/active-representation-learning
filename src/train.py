@@ -316,34 +316,18 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-    is_mock = True
-    resume_name = None
-
-    try:
-        sys.argv.remove("--tag")
-        is_mock = False
-    except ValueError:
-        pass
-
-    try:
-        idx = sys.argv.index("--resume")
-        is_mock = False
-        resume_name = sys.argv[idx + 1]
-
-        # Remove the argument
-        del sys.argv[idx]
-        # Remove its value
-        del sys.argv[idx]
-    except ValueError:
-        pass
-
-    # Get the run name
-    if is_mock:
-        run_name = "mock"
-    elif resume_name is not None:
-        run_name = resume_name
+    tag = [arg for arg in sys.argv if "--tag" in arg]
+    if len(tag) > 1:
+        raise ValueError("You can only specify one tag")
+    elif len(tag) == 1:
+        try:
+            run_name = tag[0].split("=")[1]
+        except IndexError:
+            run_name = get_random_name()
+        finally:
+            sys.argv.remove(tag[0])
     else:
-        run_name = get_random_name()
+        run_name = "mock"
 
     # Register the name
     OmegaConf.register_new_resolver("run_name", lambda: run_name)
