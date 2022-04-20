@@ -43,7 +43,7 @@ def encode_frames(encoder, frames_tensor):
 
 
 def train_classifier(features, labels):
-    clf = make_pipeline(StandardScaler(), LinearSVC())
+    clf = make_pipeline(StandardScaler(), LinearSVC(C=0.03125))
     clf.fit(features, labels)
 
     return clf
