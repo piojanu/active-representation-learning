@@ -68,7 +68,9 @@ class LookAtObjs(MiniWorldEnv):
     Room with multiple objects in which the agent can only turn around.
     """
 
-    def __init__(self, max_angle=2 * math.pi, num_objs=5, **kwargs):
+    SIZE = 10
+
+    def __init__(self, max_angle=2 * math.pi, num_objs=6, **kwargs):
         self.num_objs = num_objs
 
         if max_angle == 2 * math.pi:  # For a full circle
@@ -79,8 +81,6 @@ class LookAtObjs(MiniWorldEnv):
             self.revolution_step = max_angle / (self.num_objs - 1)
         else:
             raise ValueError("max_angle must be lower or equal 2pi")
-
-        self.size = 10
 
         super().__init__(max_episode_steps=math.inf, **kwargs)
 
@@ -94,10 +94,10 @@ class LookAtObjs(MiniWorldEnv):
         no_ceiling = self.rand.bool() if self.domain_rand else True
 
         self.add_rect_room(
-            min_x=-self.size // 2,
-            max_x=self.size // 2,
-            min_z=-self.size // 2,
-            max_z=self.size // 2,
+            min_x=-self.SIZE // 2,
+            max_x=self.SIZE // 2,
+            min_z=-self.SIZE // 2,
+            max_z=self.SIZE // 2,
             floor_tex=floor_tex,
             wall_tex=wall_tex,
             ceil_tex=ceil_tex,
