@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import argparse
 import multiprocessing as mp
 import os
@@ -7,6 +6,7 @@ import os.path as osp
 
 import numpy as np
 import torch
+from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
@@ -43,10 +43,14 @@ def encode_frames(encoder, frames_tensor):
 
 
 def train_classifier(features, labels):
-    clf = make_pipeline(StandardScaler(), LinearSVC(C=0.03125))
-    clf.fit(features, labels)
+    clf = make_pipeline(StandardScaler(), LinearSVC())
 
-    return clf
+    gscv = GridSearchCV(
+        clf, param_grid={"linearsvc__C": [2 ** -7, 2 ** -6, 2 ** -5, 2 ** -4, 2 ** -3]}
+    )
+    gscv.fit(features, labels)
+
+    return gscv.best_estimator_, gscv.best_params_["linearsvc__C"]
 
 
 def evaluate_model(model, features, labels):
@@ -134,10 +138,10 @@ def worker(key_n_encoder_dir):
         train_features = encode_frames(encoder, train_frames)
         test_features = encode_frames(encoder, test_frames)
 
-        model = train_classifier(train_features, train_labels)
+        model, best_C = train_classifier(train_features, train_labels)
 
         value = evaluate_model(model, test_features, test_labels)
-        accuracies.append((step, value))
+        accuracies.append((step, value, best_C))
 
     return (key, accuracies)
 
@@ -147,7 +151,7 @@ def main(data_path, exp_dir, delta):
     for root, dirs, _ in os.walk(exp_dir):
         if "tb" in dirs:
             print(f"Processing: {osp.relpath(root, start=exp_dir)}")
-            tb_writer = SummaryWriter(log_dir=osp.join(root, "tb"))
+            tb_writer = SummaryWriter(log_dir=osp.join(root, "tb", "postproc"))
 
         if "encoder_0" in dirs:
             encoder_dirs = [
@@ -165,8 +169,9 @@ def main(data_path, exp_dir, delta):
                 for key, accuracies in result:
                     # Log accuracies
                     # NOTE: They need to be sorted by step
-                    for step, value in accuracies:
+                    for step, value, best_C in accuracies:
                         tb_writer.add_scalar(f"Accuracy/{key}", value, step)
+                        tb_writer.add_scalar(f"BestC/{key}", best_C, step)
 
 
 if __name__ == "__main__":
