@@ -4,7 +4,7 @@ import torch.nn as nn
 from a2c_ppo_acktr.distributions import Bernoulli, Categorical, DiagGaussian
 from a2c_ppo_acktr.utils import init
 
-from nets.convnet import ConvNetEncoder
+from nets import ConvNet26x26Encoder
 
 
 class ActorCritic(nn.Module):
@@ -155,7 +155,7 @@ class CNNBase(NNBase):
     def __init__(self, obs_shape, hidden_size=512, recurrent=False):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
-        self.encoder = ConvNetEncoder(n_features=hidden_size)
+        self.encoder = ConvNet26x26Encoder(n_features=hidden_size)
         self.critic_linear = init(
             nn.Linear(hidden_size, 1),
             nn.init.orthogonal_,

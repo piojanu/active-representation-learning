@@ -9,6 +9,7 @@ class ResNetEncoder(nn.Module):
     def __init__(
         self,
         layers,
+        channels=[64, 128, 256, 512],
         block=BasicBlock,
         zero_init_residual=False,
         groups=1,
@@ -21,7 +22,7 @@ class ResNetEncoder(nn.Module):
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
 
-        self.inplanes = 64
+        self.inplanes = channels[0]
         self.dilation = 1
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
@@ -38,22 +39,34 @@ class ResNetEncoder(nn.Module):
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.layer1 = self._make_layer(block, 64, layers[0])
+        self.layer1 = self._make_layer(block, channels[0], layers[0])
         if len(layers) > 1:
             self.layer2 = self._make_layer(
-                block, 128, layers[1], stride=2, dilate=replace_stride_with_dilation[0]
+                block,
+                channels[1],
+                layers[1],
+                stride=2,
+                dilate=replace_stride_with_dilation[0],
             )
         else:
             self.layer2 = None
         if len(layers) > 2:
             self.layer3 = self._make_layer(
-                block, 256, layers[2], stride=2, dilate=replace_stride_with_dilation[1]
+                block,
+                channels[2],
+                layers[2],
+                stride=2,
+                dilate=replace_stride_with_dilation[1],
             )
         else:
             self.layer3 = None
         if len(layers) > 3:
             self.layer4 = self._make_layer(
-                block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2]
+                block,
+                channels[3],
+                layers[3],
+                stride=2,
+                dilate=replace_stride_with_dilation[2],
             )
         else:
             self.layer4 = None
