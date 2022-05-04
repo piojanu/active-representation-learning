@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Install third-party packages from the `etc/` directory and their dependencies:
+Install [PyTorch](https://pytorch.org/get-started/locally/) and third-party packages from the `etc/` directory:
 
 - [etc/gym-miniworld](https://github.com/maximecb/gym-miniworld).
 - [etc/pytorch-a2c-ppo-acktr-gail](https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail).
