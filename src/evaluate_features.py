@@ -50,7 +50,9 @@ def train_classifier(features, labels):
     )
     gscv.fit(features, labels)
 
-    return gscv.best_estimator_, gscv.best_params_["linearsvc__C"]
+    return gscv.best_estimator_, dict(
+        score=gscv.best_score_, C=gscv.best_params_["linearsvc__C"]
+    )
 
 
 def evaluate_model(model, features, labels):
@@ -128,7 +130,7 @@ def worker(key_n_encoder_dir):
         key=lambda x: x[0],
     )
 
-    accuracies = []
+    results = []
     for ptr in linquad_range(delta, len(ckpt_paths) - 1):
         step, path = ckpt_paths[ptr]
 
@@ -138,12 +140,13 @@ def worker(key_n_encoder_dir):
         train_features = encode_frames(encoder, train_frames)
         test_features = encode_frames(encoder, test_frames)
 
-        model, best_C = train_classifier(train_features, train_labels)
+        model, info = train_classifier(train_features, train_labels)
 
         value = evaluate_model(model, test_features, test_labels)
-        accuracies.append((step, value, best_C))
 
-    return (key, accuracies)
+        results.append((step, value, info))
+
+    return key, results
 
 
 def main(data_path, exp_dir, delta):
@@ -165,13 +168,14 @@ def main(data_path, exp_dir, delta):
                 initializer=init_worker,
                 initargs=[data_path, delta],
             ) as pool:
-                result = pool.map(worker, encoder_dirs)
-                for key, accuracies in result:
-                    # Log accuracies
-                    # NOTE: They need to be sorted by step
-                    for step, value, best_C in accuracies:
-                        tb_writer.add_scalar(f"Accuracy/{key}", value, step)
-                        tb_writer.add_scalar(f"BestC/{key}", best_C, step)
+                for key, results in pool.map(worker, encoder_dirs):
+                    # NOTE: Results need to be sorted by step
+                    for step, value, info in results:
+                        tb_writer.add_scalar(f"TestAccuracy/{key}", value, step)
+                        tb_writer.add_scalar(
+                            f"TrainAccuracy/{key}", info["score"], step
+                        )
+                        tb_writer.add_scalar(f"TunedC/{key}", info["C"], step)
 
 
 if __name__ == "__main__":
