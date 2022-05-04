@@ -2,6 +2,7 @@ defaults:
   - agent: ppo
   - encoder: simclr
   - _self_
+
 hydra:
   run:
     dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${run_name:}/${now:T%H-%M-%S}:${hydra.job.override_dirname}/s${seed}

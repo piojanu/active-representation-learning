@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: submitit_slurm
+  - _self_
+
+hydra:
+  launcher:
+    cpus_per_task: 64 # Allocate nodes with Intel Xeon Gold CPUs
+    partition: compute # Select across CPU-only nodes
+    timeout_min: 1440 # Timeout after one day
