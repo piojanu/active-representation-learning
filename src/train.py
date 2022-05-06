@@ -8,8 +8,6 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 
-# trunk-ignore(flake8/F401)
-import envs
 from algos.ppo import PPO, ActorCritic, RolloutStorage
 from algos.ppo.actor_critic import (
     ConstantActorCritic,

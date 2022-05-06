@@ -1,7 +1,4 @@
 import gym
-
-# trunk-ignore(flake8/F401)
-import gym_miniworld
 import numpy as np
 import torch
 from a2c_ppo_acktr.envs import TimeLimitMask, TransposeImage
@@ -27,6 +24,12 @@ def make_env(
             return "cpu"
 
     def _thunk():
+        # Lazy import MiniWorld to avoid OGL initialization errors in the access node
+        import gym_miniworld  # trunk-ignore(flake8/F401)
+
+        # Register custom gym environments
+        import envs  # trunk-ignore(flake8/F401)
+
         env = gym.make(env_name, **gym_kwargs)
         env.seed(seed + rank)
         env.action_space.seed(seed + rank)
