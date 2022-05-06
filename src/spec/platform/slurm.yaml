@@ -6,6 +6,7 @@ defaults:
 
 hydra:
   launcher:
+    constraint: "fma" # Require AVX2 support (all and only AVX2 nodes support FMA)
     cpus_per_task: 64 # Allocate nodes with Intel Xeon Gold CPUs
     partition: compute # Select across CPU-only nodes
     timeout_min: 1440 # Timeout after one day
