@@ -9,3 +9,9 @@ hydra:
     cpus_per_task: 64 # Allocate nodes with Intel Xeon Gold CPUs
     partition: compute # Select across CPU-only nodes
     timeout_min: 1440 # Timeout after one day
+    setup:
+      - Xvfb :97 -screen 0 1024x768x24 -ac +extension GLX +render -noreset -nolisten tcp -nolisten unix &
+      - export DISPLAY=:97
+
+training:
+  cuda: False
