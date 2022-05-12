@@ -230,11 +230,12 @@ def main(cfg):
         # If it's time to log encoder...
         if (
             local_encoder_log_interval is not None
+            and (local_step + 1) >= cfg.encoder.training.buffer_size
             and (local_step + 1) % local_encoder_log_interval == 0
         ):
             dump_logs = True
 
-            if "last_batch" in infos[0]["encoder"].keys():
+            if "last_batch" in infos[0]["encoder"]:
                 for idx, info in enumerate(infos):
                     # Transpose so pairs are next to each other
                     last_batch = np.swapaxes(info["encoder"]["last_batch"], 0, 1)
