@@ -8,7 +8,8 @@ hydra:
   launcher:
     constraint: "fma" # Require AVX2 support (all and only AVX2 nodes support FMA)
     cpus_per_task: 28 # Fit both cnode3xx and cnode4xx (~half of Xeon Gold)
-    partition: compute # Allocate CPU-only nodes
+    mem_gb: 168 # Allocate ~half of the cnode4xx memory (it is enough for cnode3xx too)
+    partition: compute # Select across CPU-only nodes
     timeout_min: 1440 # Timeout after one day
     setup:
       - Xvfb :97 -screen 0 1024x768x24 -ac +extension GLX +render -noreset -nolisten tcp -nolisten unix &
