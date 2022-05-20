@@ -1,4 +1,6 @@
+# Running
 hydra-core
 hydra-submitit-launcher
+# Logging
+aim
 moviepy
-tensorboard

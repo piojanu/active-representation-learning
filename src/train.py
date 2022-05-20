@@ -102,7 +102,9 @@ def main(cfg):
     rollouts.to(device, non_blocking=True)
 
     # Prepare logger
-    logger = EpochLogger()
+    logger = EpochLogger(
+        run_name=run_name, hyper_params=OmegaConf.to_container(cfg, resolve=True)
+    )
 
     if isinstance(agent, DummyAgent):
         local_agent_log_interval = None
@@ -242,11 +244,7 @@ def main(cfg):
                     # Flatten the pair and batch dimensions
                     last_batch = np.reshape(last_batch, (-1,) + last_batch.shape[2:])
 
-                    logger.writer.add_images(
-                        f"LastBatch/E{idx}",
-                        last_batch,
-                        global_step_plus_one,
-                    )
+                    logger.log_image(f"LastBatch/E{idx}", last_batch)
                     logger.log_heatmap(
                         f"ConfusionMatrix/E{idx}", info["encoder"]["confusion_matrix"]
                     )
@@ -273,12 +271,12 @@ def main(cfg):
             dump_logs = True
 
             # Record the last iteration rollouts
-            logger.writer.add_video(
-                "RolloutsBuffer",
-                torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
-                global_step_plus_one,
-                fps=15,
-            )
+            # logger.writer.add_video(
+            #     "RolloutsBuffer",
+            #     torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
+            #     global_step_plus_one,
+            #     fps=15,
+            # )
 
             # TODO: Uncomment this when working with episodic envs again
             # logger.log_tabular("RolloutReturn", with_min_and_max=True)

@@ -1,11 +1,11 @@
 """Some simple logging functionality, inspired by spinup's logging."""
-
-import os.path as osp
+import os
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
-from stable_baselines3.common.vec_env.base_vec_env import tile_images
-from torch.utils.tensorboard import SummaryWriter
+from aim import Distribution, Image, Run
+from torch.utils.tensorboard._utils import convert_to_HWC, figure_to_image
 
 
 def colorize(string, color, bold=False, highlight=False):
@@ -31,39 +31,94 @@ def colorize(string, color, bold=False, highlight=False):
     return "\x1b[%sm%s\x1b[0m" % (";".join(attr), string)
 
 
+class AimRun:
+    """Adapter around aim.Run to handle SpinUp-like logging."""
+
+    def __init__(self, run_name, hyper_params):
+        self.run = Run(
+            repo=os.environ.get("SCRATCH_SPACE", None),
+            experiment=run_name,
+            log_system_params=True,
+        )
+        self.run["hparams"] = hyper_params
+
+    @staticmethod
+    def split_key(key):
+        """Splits SpinUp-like key into Aim key and context."""
+        name, _, type = key.partition("/")
+
+        if type == "":
+            context = None
+        elif type in ("Avg", "Hist", "Max", "Min", "Std"):
+            context = dict(metric=type)
+        elif re.fullmatch("E[0-9]+", type) is not None:
+            context = dict(encoder=type[1:])
+        else:
+            context = dict(type=type)
+
+        return name, context
+
+    def track(self, key, value, step=None):
+        """Track a value."""
+        name, context = AimRun.split_key(key)
+        self.run.track(value, name, step=step, context=context)
+
+    def track_histogram(self, key, histogram, step=None):
+        """Track a histogram."""
+        self.track(key, Distribution(histogram), step=step)
+
+    def track_image(self, key, image, step=None):
+        """Track an image.
+
+        Note: We assume the PyTorch image data format (channel first).
+        """
+        if image.ndim == 4:
+            image = convert_to_HWC(image, input_format="NCHW")
+        elif image.ndim == 3:
+            image = convert_to_HWC(image, input_format="CHW")
+
+        if image.dtype == np.float32:
+            image = (image * 255).astype(np.uint8)
+
+        self.track(key, Image(image), step=step)
+
+    def track_scalar(self, key, scalar, step=None):
+        """Track a scalar."""
+        self.track(key, scalar, step=step)
+
+
 class Logger:
     """A general-purpose logger.
 
-    Makes it easy to log diagnostics to CMD, TensorBoard, or Neptune.
+    Makes it easy to log diagnostics to CMD and AimStack.
     """
 
-    def __init__(self, neptune_kwargs=None):
-        """Initialize a Logger.
+    def __init__(self, run_name, hyper_params):
+        """Initialize a Logger."""
+        self.aim_run = AimRun(run_name, hyper_params)
 
-        Args:
-            neptune_kwargs (dict): Neptune init kwargs. If None, then Neptune
-                logging is disabled.
-        """
-        if neptune_kwargs is not None:
-            import neptune.new as neptune
-
-            self.neptune_run = neptune.init(**neptune_kwargs)
-        else:
-            self.neptune_run = None
-
-        self.writer = SummaryWriter(log_dir=osp.abspath("tb"))
-
-        self.log_current_map = {}
+        self.log_current_img = {}
         self.log_current_row = {}
 
     def log_heatmap(self, key, val):
-        """Log a heatmap of some diagnostic."""
+        """Generate a heatmap and log it as an image."""
+        fig = plt.figure(figsize=(8, 8))
+        ax = fig.add_subplot(111)
 
-        assert key not in self.log_current_map, (
+        ax.imshow(val, cmap="viridis")
+        fig.colorbar(plt.cm.ScalarMappable(cmap="viridis"), ax=ax)
+
+        img_arr = figure_to_image(fig)
+        self.log_image(key, img_arr)
+
+    def log_image(self, key, val):
+        """Log an image."""
+
+        assert key not in self.log_current_img, (
             "You already set %s this iteration. "
             "Maybe you forgot to call dump_tabular()" % key
         )
-        self.log_current_map[key] = val
+        self.log_current_img[key] = val
 
     def log_tabular(self, key, val):
         """Log a value of some diagnostic.
@@ -78,6 +133,11 @@ class Logger:
             "Maybe you forgot to call dump_tabular()" % key
         )
         self.log_current_row[key] = val
+
+    def log_video(self, key, val):
+        """Log a video."""
+
+        raise NotImplementedError()
 
     def dump_tabular(self, global_step):
         """Write all of the diagnostics from the current iteration.
@@ -96,23 +156,14 @@ class Logger:
             valstr = "%8.3g" % val if hasattr(val, "__float__") else val
             print(fmt % (key, valstr))
 
-            # Write to TensorBoard
-            self.writer.add_scalar(key, val, global_step)
-
-            # Write to Neptune
-            if self.neptune_run is not None:
-                self.neptune_run[key].log(val, global_step)
+            # Write to Aim
+            self.aim_run.track_scalar(key, val, step=global_step)
         print("-" * n_slashes, flush=True)
 
-        for key, val in self.log_current_map.items():
-            # Generate a heatmap
-            fig, ax = plt.subplots()
-            ax.imshow(val, cmap="viridis")
-            fig.colorbar(plt.cm.ScalarMappable(cmap="viridis"), ax=ax)
+        for key, img in self.log_current_img.items():
+            self.aim_run.track_image(key, img, step=global_step)
 
-            self.writer.add_figure(key, fig, global_step)
-
-        self.log_current_map.clear()
+        self.log_current_img.clear()
         self.log_current_row.clear()
 
 
@@ -156,27 +207,6 @@ class EpochLogger(Logger):
                 self.epoch_dict[k] = []
             self.epoch_dict[k].append(v)
 
-    def log_heatmap(self, key, val=None):
-        """Log a heatmap or possibly the tiled heatmaps.
-
-        Args:
-            key (string): The name of the diagnostic. If you are logging a
-                diagnostic whose state has previously been saved with
-                ``store``, the key here has to match the key you used there.
-
-            val: Values for the heatmap. If you have previously saved
-                values for this key via ``store``, do *not* provide a ``val``
-                here.
-        """
-        if val is not None:
-            super().log_heatmap(key, val)
-        else:
-            # Add channel dimension
-            vals = np.expand_dims(np.asarray(self.epoch_dict[key]), axis=-1)
-            tiled_vals = tile_images(vals)
-            super().log_heatmap(key, tiled_vals)
-        self.epoch_dict[key] = []
-
     def log_tabular(
         self,  # pylint: disable=arguments-differ
         key,
@@ -205,9 +235,9 @@ class EpochLogger(Logger):
             super().log_tabular(key, val)
         else:
             vals = self.epoch_dict[key]
-            self.histogram_dict[key + "/Hist"] = np.array(vals)
             super().log_tabular(key + "/Avg", np.mean(vals))
             if not average_only:
+                self.histogram_dict[key + "/Hist"] = np.array(vals)
                 super().log_tabular(key + "/Std", np.std(vals))
             if with_min_and_max:
                 super().log_tabular(key + "/Max", np.max(vals))
@@ -221,6 +251,6 @@ class EpochLogger(Logger):
             global_step (int): Global step value of the diagnostics.
         """
         super().dump_tabular(global_step)
-        for key, vals in self.histogram_dict.items():
-            self.writer.add_histogram(key, vals, global_step)
+        for key, hist in self.histogram_dict.items():
+            self.aim_run.track_histogram(key, hist, step=global_step)
         self.histogram_dict.clear()
