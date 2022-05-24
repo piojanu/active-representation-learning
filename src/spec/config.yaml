@@ -5,14 +5,16 @@ defaults:
 
 hydra:
   run:
-    dir: ${_run.scratch_space}/active-representation-learning/${now:%Y%m%d}/${_run.exp_name}/${_run.run_name}/s${seed}
+    dir: ${_run.scratch_space}/${now:%Y%m%d}/${_run.exp_name}/${_run.run_name}
   sweep:
-    dir: ${_run.scratch_space}/active-representation-learning/${now:%Y%m%d}/${_run.exp_name}
-    subdir: ${_run.run_name}/s${seed}
+    dir: ${_run.scratch_space}/${now:%Y%m%d}/${_run.exp_name}
+    subdir: ${_run.run_name}
   job:
     config:
       override_dirname:
         exclude_keys:
+          - experiment
+          - platform
           - seed
 
 env: MiniWorld-PickupObjs-v0
@@ -30,5 +32,5 @@ training:
 
 _run:
   exp_name: ${exp_name:}
-  run_name: ${now:T%H-%M-%S}:${hydra:job.override_dirname}
-  scratch_space: ${oc.env:SCRATCH_SPACE}
+  run_name: ${now:T%H-%M-%S.%f}:${hydra:job.override_dirname}
+  scratch_space: ${oc.env:SCRATCH_SPACE}/active-representation-learning
