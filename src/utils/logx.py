@@ -43,12 +43,12 @@ class AimRun:
         self.run["hparams"] = cfg
 
     @staticmethod
-    def split_key(key):
-        """Splits SpinUp-like key into Aim key and context."""
+    def parse_key(key):
+        """Parse SpinUp-like key into Aim key and context."""
         name, _, type = key.partition("/")
 
         if type == "":
-            context = None
+            context = dict()
         elif type in ("Avg", "Hist", "Max", "Min", "Std"):
             context = dict(metric=type)
         elif re.fullmatch("E[0-9]+", type) is not None:
@@ -56,11 +56,18 @@ class AimRun:
         else:
             context = dict(type=type)
 
+        if name.startswith("Train"):
+            name = name[5:]
+            context["type"] = "Train"
+        elif name.startswith("Test"):
+            name = name[4:]
+            context["type"] = "Test"
+
         return name, context
 
     def track(self, key, value, step=None):
         """Track a value."""
-        name, context = AimRun.split_key(key)
+        name, context = AimRun.parse_key(key)
         self.run.track(value, name, step=step, context=context)
 
     def track_histogram(self, key, histogram, step=None):
