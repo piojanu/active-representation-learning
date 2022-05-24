@@ -5,10 +5,10 @@ defaults:
 
 hydra:
   run:
-    dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${run_name:}/${now:T%H-%M-%S}:${hydra.job.override_dirname}/s${seed}
+    dir: ${_run.scratch_space}/active-representation-learning/${now:%Y%m%d}/${_run.exp_name}/${_run.run_name}/s${seed}
   sweep:
-    dir: ${oc.env:SCRATCH_SPACE}/active-representation-learning/${now:%Y%m%d}/${run_name:}
-    subdir: ${now:T%H-%M-%S}:${hydra.job.override_dirname}/s${seed}
+    dir: ${_run.scratch_space}/active-representation-learning/${now:%Y%m%d}/${_run.exp_name}
+    subdir: ${_run.run_name}/s${seed}
   job:
     config:
       override_dirname:
@@ -27,3 +27,8 @@ training:
   num_processes: 8 # How many CPU processes to use for data collection
   num_steps: 2048 # Number of environment interactions before policy improvement
   total_steps: 3e6 # Total environment interactions throughout training
+
+_run:
+  exp_name: ${exp_name:}
+  run_name: ${now:T%H-%M-%S}:${hydra:job.override_dirname}
+  scratch_space: ${oc.env:SCRATCH_SPACE}

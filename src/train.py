@@ -28,7 +28,7 @@ def main(cfg):
     # WA: CUDA out of memory when starting next experiment in the sweep
     time.sleep(5)
 
-    print(OmegaConf.to_yaml(cfg))
+    print(OmegaConf.to_yaml(cfg, resolve=True))
     assert cfg.training.num_steps % cfg.training.num_processes == 0
 
     torch.manual_seed(cfg.seed)
@@ -102,9 +102,7 @@ def main(cfg):
     rollouts.to(device, non_blocking=True)
 
     # Prepare logger
-    logger = EpochLogger(
-        run_name=run_name, hyper_params=OmegaConf.to_container(cfg, resolve=True)
-    )
+    logger = EpochLogger(cfg)
 
     if isinstance(agent, DummyAgent):
         local_agent_log_interval = None
@@ -315,20 +313,20 @@ def main(cfg):
 if __name__ == "__main__":
     tag = [arg for arg in sys.argv if "--tag" in arg]
     if len(tag) > 1:
-        raise ValueError("You can only specify one tag")
+        raise ValueError("You can only specify one experiment tag")
     elif len(tag) == 1:
         try:
-            run_name = tag[0].split("=")[1]
+            exp_name = tag[0].split("=")[1]
         except IndexError:
-            run_name = get_random_name()
+            exp_name = get_random_name()
         finally:
             sys.argv.remove(tag[0])
     else:
-        run_name = "mock"
+        exp_name = "mock"
 
-    # Register the name
-    OmegaConf.register_new_resolver("run_name", lambda: run_name)
-    print(f'This run name is "{run_name}", good luck!')
+    # Register the experiment name
+    OmegaConf.register_new_resolver("exp_name", lambda: exp_name)
+    print(f'This experiment name is "{exp_name}", good luck!')
 
     # Run!
     main()

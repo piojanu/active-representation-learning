@@ -1,5 +1,4 @@
 """Some simple logging functionality, inspired by spinup's logging."""
-import os
 import re
 
 import matplotlib.pyplot as plt
@@ -34,13 +33,14 @@ def colorize(string, color, bold=False, highlight=False):
 class AimRun:
     """Adapter around aim.Run to handle SpinUp-like logging."""
 
-    def __init__(self, run_name, hyper_params):
+    def __init__(self, cfg):
         self.run = Run(
-            repo=os.environ.get("SCRATCH_SPACE", None),
-            experiment=run_name,
+            repo=cfg._run.scratch_space,
+            experiment=cfg._run.exp_name,
+            run_hash=cfg._run.run_name,
             log_system_params=True,
         )
-        self.run["hparams"] = hyper_params
+        self.run["hparams"] = cfg
 
     @staticmethod
     def split_key(key):
@@ -93,9 +93,9 @@ class Logger:
     Makes it easy to log diagnostics to CMD and AimStack.
     """
 
-    def __init__(self, run_name, hyper_params):
+    def __init__(self, cfg):
         """Initialize a Logger."""
-        self.aim_run = AimRun(run_name, hyper_params)
+        self.aim_run = AimRun(cfg)
 
         self.log_current_img = {}
         self.log_current_row = {}
