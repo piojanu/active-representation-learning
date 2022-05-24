@@ -3,6 +3,7 @@ import argparse
 import multiprocessing as mp
 import os
 import os.path as osp
+import re
 
 import numpy as np
 import torch
@@ -10,7 +11,6 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
-from torch.utils.tensorboard import SummaryWriter
 
 MAX_WORKERS = 8
 
@@ -85,7 +85,7 @@ def init_worker(data_path, delta_):
         train_frames = (
             # Transpose to NCHW
             torch.from_numpy(data["train_frames"].transpose(0, 3, 1, 2)).to(
-                device, dtype=torch.float, non_blocking=True
+                device, dtype=torch.float
             )
             / 255.0
         )
@@ -97,7 +97,7 @@ def init_worker(data_path, delta_):
         test_frames = (
             # Transpose to NCHW
             torch.from_numpy(data["test_frames"].transpose(0, 3, 1, 2)).to(
-                device, dtype=torch.float, non_blocking=True
+                device, dtype=torch.float
             )
             / 255.0
         )
@@ -106,8 +106,8 @@ def init_worker(data_path, delta_):
         test_labels = data["test_labels"]
 
 
-def worker(key_n_encoder_dir):
-    key, encoder_dir = key_n_encoder_dir
+def worker(idx_n_encoder_dir):
+    idx, encoder_dir = idx_n_encoder_dir
 
     global delta
     global device
@@ -146,20 +146,23 @@ def worker(key_n_encoder_dir):
 
         results.append((step, value, info))
 
-    return key, results
+    return idx, results
 
 
-def main(data_path, exp_dir, delta):
-    tb_writer = None
+def main(data_path, exp_dir, aim_repo, delta):
+    import aim
+
+    pattern = re.compile(r"T\d{2}-\d{2}-\d{2}")
     for root, dirs, _ in os.walk(exp_dir):
-        if "tb" in dirs:
-            print(f"Processing: {osp.relpath(root, start=exp_dir)}")
-            tb_writer = SummaryWriter(log_dir=osp.join(root, "tb", "postproc"))
+        if pattern.match(osp.basename(root)):
+            run_name = osp.basename(root)
+            aim_run = aim.Run(run_name, repo=aim_repo)
+            print(f"Processing: {run_name}")
 
         if "encoder_0" in dirs:
             encoder_dirs = [
-                # (<key>, <path>)
-                (f"E{dirname[8:]}", osp.join(root, dirname))
+                # (<idx>, <path>)
+                (f"{dirname[8:]}", osp.join(root, dirname))
                 for dirname in dirs
                 if "encoder_" in dirname
             ]
@@ -168,14 +171,27 @@ def main(data_path, exp_dir, delta):
                 initializer=init_worker,
                 initargs=[data_path, delta],
             ) as pool:
-                for key, results in pool.map(worker, encoder_dirs):
+                for idx, results in pool.map(worker, encoder_dirs):
                     # NOTE: Results need to be sorted by step
                     for step, value, info in results:
-                        tb_writer.add_scalar(f"TestAccuracy/{key}", value, step)
-                        tb_writer.add_scalar(
-                            f"TrainAccuracy/{key}", info["score"], step
+                        aim_run.track(
+                            value,
+                            "Accuracy",
+                            step=step,
+                            context=dict(encoder=str(idx), type="Test"),
                         )
-                        tb_writer.add_scalar(f"TunedC/{key}", info["C"], step)
+                        aim_run.track(
+                            info["score"],
+                            "Accuracy",
+                            step=step,
+                            context=dict(encoder=str(idx), type="Train"),
+                        )
+                        aim_run.track(
+                            info["C"],
+                            "TunedC",
+                            step=step,
+                            context=dict(encoder=str(idx)),
+                        )
 
 
 if __name__ == "__main__":
@@ -195,6 +211,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate the learned features")
     parser.add_argument("--data_path", type=_file_path, help="Path to the dataset")
     parser.add_argument("--exp_dir", type=_dir_path, help="Dir. path to the experiment")
+    parser.add_argument("--aim_repo", type=_dir_path, help="Dir. path to the Aim repo")
     parser.add_argument(
         "--delta",
         type=int,
@@ -203,4 +220,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.data_path, args.exp_dir, args.delta)
+    main(args.data_path, args.exp_dir, args.aim_repo, args.delta)
