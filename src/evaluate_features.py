@@ -152,7 +152,7 @@ def worker(idx_n_encoder_dir):
 def main(data_path, exp_dir, aim_repo, delta):
     import aim
 
-    pattern = re.compile(r"T\d{2}-\d{2}-\d{2}")
+    pattern = re.compile(r"U\d{6}")
     for root, dirs, _ in os.walk(exp_dir):
         if pattern.match(osp.basename(root)):
             run_name = osp.basename(root)
