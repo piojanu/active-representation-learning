@@ -9,7 +9,7 @@ import torchvision
 from simclr.simclr import SimCLR
 
 from algos.simclr import NT_Xent
-from nets import DeepResNet9Encoder
+from nets import ShallowResNet5Encoder
 
 
 def collate_batch_of_pairs(batch):
@@ -168,7 +168,7 @@ class _Worker(threading.Thread):
         self.data_iter = None
 
         # Create SimCLR encoder
-        self.encoder = DeepResNet9Encoder()
+        self.encoder = ShallowResNet5Encoder()
         n_features = self.encoder(torch.randn(1, *observation_shape)).shape[1]
         self.encoder.to(self.device, non_blocking=True)
 

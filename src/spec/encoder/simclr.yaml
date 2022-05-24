@@ -6,8 +6,8 @@ model:
   projection_dim: 64
   temperature: 0.5
 training:
-  buffer_size: 128
+  buffer_size: 256
   learning_rate: 3e-4
-  mini_batch_size: 64
-  num_updates: 1
+  mini_batch_size: 128
+  num_updates: 4
   preproc_ratio: 0.5
