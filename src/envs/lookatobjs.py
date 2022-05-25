@@ -82,7 +82,7 @@ class LookAtObjs(MiniWorldEnv):
         else:
             raise ValueError("max_angle must be lower or equal 2pi")
 
-        super().__init__(max_episode_steps=math.inf, **kwargs)
+        super().__init__(max_episode_steps=3000, **kwargs)
 
         # Reduce the action space
         self.action_space = spaces.Discrete(self.actions.turn_right + 1)

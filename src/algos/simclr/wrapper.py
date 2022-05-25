@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import queue
 import threading
+from random import randint
 
 import gym
 import torch
@@ -31,15 +32,16 @@ class _Dataset(torch.utils.data.IterableDataset):
         self.transforms = transforms
         self.preproc_ratio = preproc_ratio
 
-        # Allocate shared memory buffer for observations
-        self.buffer = torch.empty(buffer_shape).share_memory_()
-        self.buffer_checksum = torch.ones(
-            self.buffer_size, dtype=torch.int
-        ).share_memory_()
+        # Allocate the buffer for observations
+        self.buffer = torch.empty(buffer_shape)
+        self.buffer_checksum = torch.zeros(self.buffer_size, dtype=torch.int)
+
+        # Share the observations buffer with all workers
+        self.buffer.share_memory_()
+        self.buffer_checksum.share_memory_()
 
         # Cache for transformed pairs, private to each worker
         self.cache = torch.empty(self.buffer_size, 2, *buffer_shape[1:])
-        # Must be different than the buffer checksum so it starts from the invalid state
         self.cache_checksum = torch.zeros(self.buffer_size, dtype=torch.int)
 
         self.indices = []
@@ -54,9 +56,9 @@ class _Dataset(torch.utils.data.IterableDataset):
 
     def __next__(self):
         if len(self.indices) == 0:
+            # NOTE: It's okay for ptr-s to repeat across workers, because each one holds
+            #       a private cache with differently transformed pairs.
             self.indices = torch.randperm(self.buffer_size).tolist()
-        # NOTE: It's okay for ptr-s to repeat across workers, because each one holds
-        #       a private cache with differently transformed pairs.
         ptr = self.indices.pop()
 
         if (
@@ -105,14 +107,20 @@ class _Worker(threading.Thread):
         num_processes,
         device_name,
         # Parent comm
-        obs_queue,
+        data_queue,
         info_queue,
     ):
         super().__init__()
         assert num_updates >= 1
 
         self.buffer_size = buffer_size
+        self.learning_rate = learning_rate
+        self.mini_batch_size = mini_batch_size
         self.num_updates = num_updates
+        self.observation_shape = observation_shape
+        self.projection_dim = projection_dim
+        self.temperature = temperature
+
         self.local_log_interval = log_interval * local_num_steps
         self.local_save_interval = save_interval * local_num_steps
 
@@ -120,17 +128,38 @@ class _Worker(threading.Thread):
         self.num_processes = num_processes
         self.device = torch.device(device_name)
 
-        self.obs_queue = obs_queue
+        self.data_queue = data_queue
         self.info_queue = info_queue
 
-        self.losses = torch.zeros(local_num_steps, device=self.device)
+        self.losses_buffer = torch.zeros(local_num_steps, device=self.device)
 
-        self.total_updates = 0
+        self.episode_steps = 0
         self.total_steps = 0
 
         self.ckpt_dir = osp.join("./checkpoints", f"encoder_{my_rank}")
         os.makedirs(self.ckpt_dir)
 
+        self.initialize_data_set_n_loader(
+            buffer_size, mini_batch_size, observation_shape, preproc_ratio
+        )
+        self.initialize_model_n_optimizer(
+            learning_rate,
+            mini_batch_size,
+            observation_shape,
+            projection_dim,
+            temperature,
+        )
+
+        # Save checkpoint at step zero
+        self.save_checkpoint(0)
+
+    def increment_counters(self):
+        self.episode_steps += 1
+        self.total_steps += 1
+
+    def initialize_data_set_n_loader(
+        self, buffer_size, mini_batch_size, observation_shape, preproc_ratio
+    ):
         # Create SimCLR transformation
         # NOTE: These are non-parametric transforms, so there is nothing to move to GPU
         transforms = torch.nn.Sequential(
@@ -163,17 +192,23 @@ class _Worker(threading.Thread):
             #       difference. Moreover, this can't be too big as prefetch is done on
             #       the old data and the new data is being written to the buffer.
             prefetch_factor=mini_batch_size // 2,
-            persistent_workers=True,
         )
-        self.data_iter = None
 
+    def initialize_model_n_optimizer(
+        self,
+        learning_rate,
+        mini_batch_size,
+        observation_shape,
+        projection_dim,
+        temperature,
+    ):
         # Create SimCLR encoder
-        self.encoder = ShallowResNet5Encoder()
-        n_features = self.encoder(torch.randn(1, *observation_shape)).shape[1]
-        self.encoder.to(self.device, non_blocking=True)
+        encoder = ShallowResNet5Encoder()
+        n_features = encoder(torch.randn(1, *observation_shape)).shape[1]
+        encoder.to(self.device, non_blocking=True)
 
         # Create SimCLR projector
-        self.model = SimCLR(self.encoder, projection_dim, n_features)
+        self.model = SimCLR(encoder, projection_dim, n_features)
         self.model.to(self.device, non_blocking=True)
 
         # Create SimCLR criterion
@@ -182,62 +217,75 @@ class _Worker(threading.Thread):
         # Create Adam optimizer
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
 
-        # Save checkpoint at step zero
-        self.save_checkpoint(0)
+    def reset(self):
+        self.episode_steps = 0
+        self.initialize_model_n_optimizer(
+            self.learning_rate,
+            self.mini_batch_size,
+            self.observation_shape,
+            self.projection_dim,
+            self.temperature,
+        )
+        # TODO: Should we reset prefetch buffers (e.g. reset `data_iter`) too?
 
     def run(self):
-        while True:
-            # NOTE: This queue fills quickly, so data collection is not a bottleneck
-            new_obs = self.obs_queue.get()
-            if new_obs is None:
-                break
+        # Fetch warm-up steps to fill the dataset
+        for idx in range(self.buffer_size):
+            obs, _ = self.data_queue.get()
+            self.dataset.insert(obs, idx)
 
-            if self.total_steps < self.buffer_size:
-                self.dataset.insert(new_obs, self.total_steps)
-                self.total_steps += 1
+        # NOTE: Prefetching starts after you call `iter` on the data loader
+        data_iter = iter(self.data_loader)
+
+        while True:
+            obs_done = self.data_queue.get()
+            if obs_done is None:
+                break
+            new_obs, done = obs_done
+
+            if done:
+                self.reset()
+
+            if self.episode_steps < self.buffer_size:
+                self.dataset.insert(new_obs, self.episode_steps)
             else:
                 self.dataset.insert(new_obs)
-                self.total_steps += 1
+            self.increment_counters()
 
-                if self.data_iter is None:
-                    # NOTE: Prefetching starts after you call `iter` on the data loader
-                    self.data_iter = iter(self.data_loader)
+            for _ in range(self.num_updates):
+                batch = next(data_iter)
+                loss, conf_matrix = self.compute_loss(
+                    # NOTE: If you won't block here, then CUDA goes out of memory
+                    batch.to(self.device, non_blocking=False)
+                )
 
-                for _ in range(self.num_updates):
-                    batch = next(self.data_iter)
-                    loss, conf_matrix = self.compute_loss(
-                        # NOTE: If you won't block here, then CUDA goes out of memory
-                        batch.to(self.device, non_blocking=False)
-                    )
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+            with torch.no_grad():
+                self.losses_buffer[self.total_steps % self.local_num_steps].copy_(
+                    loss, non_blocking=True
+                )
 
-                with torch.no_grad():
-                    self.losses[self.total_steps % self.local_num_steps].copy_(
-                        loss, non_blocking=True
-                    )
+            # Return info when it's needed for an agent update
+            if self.total_steps % self.local_num_steps == 0:
+                info = dict(
+                    losses=self.losses_buffer.tolist(),
+                    total_updates=self.total_steps * self.num_updates,
+                )
 
-                # Return info when it's needed for an agent update
-                if self.total_steps % self.local_num_steps == 0:
-                    info = dict(
-                        losses=self.losses.tolist(),
-                        total_updates=(self.total_steps - self.buffer_size)
-                        * self.num_updates,
-                    )
+                # Send these big matrices and images only when it's time for logging
+                # NOTE: Logging images is very heavy and limits steps per seconds
+                #       even by 15%! That's why we log them less often.
+                if self.total_steps % (self.local_log_interval * 10) == 0:
+                    info["confusion_matrix"] = conf_matrix.cpu().numpy()
+                    info["last_batch"] = batch.numpy()
 
-                    # Send these big matrices and images only when it's time for logging
-                    # NOTE: Logging images is very heavy and limits steps per seconds
-                    #       even by 15%! That's why we log them less often.
-                    if self.total_steps % (self.local_log_interval * 10) == 0:
-                        info["confusion_matrix"] = conf_matrix.cpu().numpy()
-                        info["last_batch"] = batch.numpy()
+                self.info_queue.put_nowait(info)
 
-                    self.info_queue.put_nowait(info)
-
-                if self.total_steps % self.local_save_interval == 0:
-                    self.save_checkpoint(self.total_steps)
+            if self.total_steps % self.local_save_interval == 0:
+                self.save_checkpoint(self.total_steps)
 
     def compute_loss(self, batch):
         x_i, x_j = batch[0], batch[1]
@@ -251,14 +299,14 @@ class _Worker(threading.Thread):
     def save_checkpoint(self, local_step):
         torch.save(
             [
-                self.encoder,
+                self.model.encoder,
                 self.model.projector,
                 self.optimizer.state_dict(),
             ],
             osp.join(self.ckpt_dir, "checkpoint.pkl"),
         )
         torch.save(
-            [self.encoder.state_dict(), self.model.projector.state_dict()],
+            [self.model.encoder.state_dict(), self.model.projector.state_dict()],
             # Align the file name to the log step
             osp.join(self.ckpt_dir, f"{local_step * self.num_processes}.pt"),
         )
@@ -294,7 +342,11 @@ class TrainSimCLR(gym.Wrapper):
         # NOTE: Without limiting threads number the CPU is the bottleneck
         torch.set_num_threads(3)
 
-        self.obs_queue = queue.SimpleQueue()
+        self.buffer_size = buffer_size
+        self.local_num_steps = local_num_steps
+        self.total_steps = 0
+
+        self.data_queue = queue.SimpleQueue()
         self.info_queue = queue.SimpleQueue()
 
         self.worker = _Worker(
@@ -312,21 +364,32 @@ class TrainSimCLR(gym.Wrapper):
             my_rank=my_rank,
             num_processes=num_processes,
             device_name=device_name,
-            obs_queue=self.obs_queue,
+            data_queue=self.data_queue,
             info_queue=self.info_queue,
         )
         self.worker.start()
 
-        self.buffer_size = buffer_size
-        self.local_num_steps = local_num_steps
+        # Fill the data queue with warm-up steps
+        action_repeat = 0
+        obs = self.env.reset()
+        for _ in range(self.buffer_size):
+            self.data_queue.put_nowait((obs, None))
 
-        self.total_steps = 0
+            if action_repeat == 0:
+                action = self.env.action_space.sample()
+                action_repeat = randint(1, 4)
+
+            obs, _, done, _ = self.env.step(action)
+            action_repeat -= 1
+
+            if done:
+                self.env.reset()
 
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
         self.total_steps += 1
 
-        self.obs_queue.put_nowait(obs)
+        self.data_queue.put_nowait((obs, done))
 
         if (
             self.total_steps >= self.buffer_size
@@ -339,9 +402,9 @@ class TrainSimCLR(gym.Wrapper):
     def close(self):
         try:
             while True:
-                self.obs_queue.get_nowait()
+                self.data_queue.get_nowait()
         except queue.Empty:
-            self.obs_queue.put(None)
+            self.data_queue.put(None)
 
         self.env.close()
         self.worker.join()
