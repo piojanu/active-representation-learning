@@ -184,7 +184,7 @@ def main(cfg):
                 cfg.rollout.bootstrap_value_at_time_limit,
                 cfg.rollout.force_non_episodic,
                 # TODO: Refactor it so this logic is hidden and can be disabled
-                mix_rewards=torch.stack(
+                mix_rewards=-torch.stack(  # Mix in the negative loss
                     [
                         torch.tensor(info["encoder"]["losses"], device=device)
                         for info in infos

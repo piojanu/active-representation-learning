@@ -20,9 +20,9 @@ hydra:
 env: MiniWorld-PickupObjs-v0
 rollout:
   bootstrap_value_at_time_limit: False
-  force_non_episodic: True # Force the advantage calculation as if the env. was non-episodic
+  force_non_episodic: False # If True, forces the advantage calculation as for the non-episodic env.
   gae_lambda: 0.95 # Generalized Advantage Estimation (GAE) lambda parameter (null to disable)
-  gamma: 0.99 # Rewards discount factor
+  gamma: 0.999 # Rewards discount factor
 seed: 42
 training:
   cuda: True

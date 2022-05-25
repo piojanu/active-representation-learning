@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /agent: ppo
+  - override /encoder: simclr
+
+env: MiniWorld-LookAtObjs-v0
+training:
+  num_processes: 8
+  num_steps: 2048
+  total_steps: 2.4e6 # = 3k time limit * 100 episodes * 8 processes
