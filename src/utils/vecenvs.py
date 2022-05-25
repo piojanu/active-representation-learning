@@ -2,7 +2,7 @@ import gym
 import numpy as np
 import torch
 from a2c_ppo_acktr.envs import TimeLimitMask, TransposeImage
-from gym.wrappers import RecordEpisodeStatistics, TimeLimit
+from gym.wrappers import TimeLimit
 from stable_baselines3.common.env_util import is_wrapped
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
 from torchvision.transforms import Resize
@@ -34,7 +34,6 @@ def make_env(
         env.seed(seed + rank)
         env.action_space.seed(seed + rank)
 
-        env = RecordEpisodeStatistics(env)
         if is_wrapped(env, TimeLimit):
             env = TimeLimitMask(env)
 

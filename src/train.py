@@ -144,11 +144,6 @@ def main(cfg):
         # Observe reward and next obs
         obs, reward, done, infos = env.step(action)
         for info in infos:
-            if "episode" in info.keys():
-                logger.store(
-                    RolloutReturn=info["episode"]["r"],
-                    RolloutLength=info["episode"]["l"],
-                )
             if "encoder" in info.keys():
                 logger.store(
                     LossEncoder=info["encoder"]["losses"],
@@ -274,13 +269,6 @@ def main(cfg):
             #     torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
             #     global_step_plus_one,
             #     fps=15,
-            # )
-
-            # TODO: Uncomment this when working with episodic envs again
-            # logger.log_tabular("RolloutReturn", with_min_and_max=True)
-            # logger.log_tabular("RolloutLength", with_min_and_max=True)
-            # logger.log_tabular(
-            #     "RolloutNumber", len(logger.histogram_dict["RolloutReturn/Hist"])
             # )
 
             elapsed_time = time.time() - start_time
