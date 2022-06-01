@@ -45,16 +45,16 @@ class AimRun:
     @staticmethod
     def parse_key(key):
         """Parse SpinUp-like key into Aim key and context."""
-        name, _, type = key.partition("/")
+        name, _, info = key.partition("/")
 
-        if type == "":
+        if info == "":
             context = dict()
-        elif type in ("Avg", "Hist", "Max", "Min", "Std"):
-            context = dict(metric=type)
-        elif re.fullmatch("E[0-9]+", type) is not None:
-            context = dict(encoder=type[1:])
+        elif info in ("Avg", "Hist", "Max", "Min", "Std"):
+            context = dict(metric=info)
+        elif re.fullmatch("E[0-9]+", info) is not None:
+            context = dict(encoder=info[1:])
         else:
-            context = dict(type=type)
+            raise NotImplementedError(f"Unknown context: {info}")
 
         if name.startswith("Train"):
             name = name[5:]
