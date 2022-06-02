@@ -230,6 +230,17 @@ def main(cfg):
         ):
             dump_logs = True
 
+            if "cumulative_losses" in infos[0]["encoder"]:
+                for idx, info in enumerate(infos):
+                    logger.log_tabular(
+                        f"CumulativeLossEncoder/E{idx}",
+                        np.mean(info["encoder"]["cumulative_losses"]),
+                    )
+                    logger.log_tabular(
+                        f"LastLossEncoder/E{idx}",
+                        np.mean(info["encoder"]["last_losses"]),
+                    )
+
             if "last_batch" in infos[0]["encoder"]:
                 for idx, info in enumerate(infos):
                     # Transpose so pairs are next to each other

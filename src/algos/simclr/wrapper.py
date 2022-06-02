@@ -131,7 +131,9 @@ class _Worker(threading.Thread):
         self.data_queue = data_queue
         self.info_queue = info_queue
 
-        self.losses_buffer = torch.zeros(local_num_steps, device=self.device)
+        self.all_losses = torch.zeros(local_num_steps, device=self.device)
+        self.cumulative_losses = [0.0]
+        self.last_losses = list()
 
         self.episode_steps = 0
         self.total_steps = 0
@@ -244,6 +246,9 @@ class _Worker(threading.Thread):
             new_obs, done = obs_done
 
             if done:
+                self.cumulative_losses.append(0.0)
+                self.last_losses.append(loss.item())  # trunk-ignore(flake8/F821)
+
                 self.reset()
 
             if self.episode_steps < self.buffer_size:
@@ -264,18 +269,31 @@ class _Worker(threading.Thread):
                 self.optimizer.step()
 
             with torch.no_grad():
-                self.losses_buffer[self.total_steps % self.local_num_steps].copy_(
+                self.all_losses[self.total_steps % self.local_num_steps].copy_(
                     loss, non_blocking=True
                 )
+                self.cumulative_losses[-1] += loss.item()
 
             # Return info when it's needed for an agent update
             if self.total_steps % self.local_num_steps == 0:
                 info = dict(
-                    losses=self.losses_buffer.tolist(),
+                    losses=self.all_losses.tolist(),
                     total_updates=self.total_steps * self.num_updates,
                 )
 
-                # Send these big matrices and images only when it's time for logging
+                # Send diagnostics only when it's time for logging
+                # NOTE: Check if at least one episode has ended since the last logging
+                if (
+                    self.total_steps % self.local_log_interval == 0
+                    and len(self.last_losses) > 0
+                ):
+                    info["cumulative_losses"] = self.cumulative_losses[:-1].copy()
+                    info["last_losses"] = self.last_losses.copy()
+
+                    self.cumulative_losses.clear()
+                    self.cumulative_losses.append(0.0)
+                    self.last_losses.clear()
+
                 # NOTE: Logging images is very heavy and limits steps per seconds
                 #       even by 15%! That's why we log them less often.
                 if self.total_steps % (self.local_log_interval * 10) == 0:
