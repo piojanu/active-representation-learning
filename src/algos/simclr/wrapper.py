@@ -278,7 +278,7 @@ class _Worker(threading.Thread):
             if self.total_steps % self.local_num_steps == 0:
                 info = dict(
                     losses=self.all_losses.tolist(),
-                    total_updates=self.total_steps * self.num_updates,
+                    total_updates=self.episode_steps * self.num_updates,
                 )
 
                 # Send diagnostics only when it's time for logging
