@@ -232,6 +232,13 @@ def main(cfg):
         ):
             dump_logs = True
 
+            logger.log_histogram(
+                "ActorWeights", agent.actor_critic.dist.linear.weight.tolist()
+            )
+            logger.log_histogram(
+                "ActorBiases", agent.actor_critic.dist.linear.bias.tolist()
+            )
+
             logger.log_tabular("LossValue")
             logger.log_tabular("LossPolicy")
             logger.log_tabular("DistEntropy", with_min_and_max=True)

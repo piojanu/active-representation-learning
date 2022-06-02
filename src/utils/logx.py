@@ -49,7 +49,7 @@ class AimRun:
 
         if info == "":
             context = dict()
-        elif info in ("Avg", "Hist", "Max", "Min", "Std"):
+        elif info in ("Avg", "Max", "Min", "Std"):
             context = dict(metric=info)
         elif re.fullmatch("E[0-9]+", info) is not None:
             context = dict(encoder=info[1:])
@@ -104,6 +104,7 @@ class Logger:
         """Initialize a Logger."""
         self.aim_run = AimRun(cfg)
 
+        self.log_current_hist = {}
         self.log_current_img = {}
         self.log_current_row = {}
 
@@ -117,6 +118,15 @@ class Logger:
 
         img_arr = figure_to_image(fig)
         self.log_image(key, img_arr)
+
+    def log_histogram(self, key, val):
+        """Log a histogram."""
+
+        assert key not in self.log_current_hist, (
+            "You already set %s this iteration. "
+            "Maybe you forgot to call dump_tabular()" % key
+        )
+        self.log_current_hist[key] = val
 
     def log_image(self, key, val):
         """Log an image."""
@@ -167,9 +177,13 @@ class Logger:
             self.aim_run.track_scalar(key, val, step=global_step)
         print("-" * n_slashes, flush=True)
 
+        for key, hist in self.log_current_hist.items():
+            self.aim_run.track_histogram(key, hist, step=global_step)
+
         for key, img in self.log_current_img.items():
             self.aim_run.track_image(key, img, step=global_step)
 
+        self.log_current_hist.clear()
         self.log_current_img.clear()
         self.log_current_row.clear()
 
@@ -201,7 +215,6 @@ class EpochLogger(Logger):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.epoch_dict = dict()
-        self.histogram_dict = dict()
 
     def store(self, **kwargs):
         """Save something into the epoch_logger's current state.
@@ -235,7 +248,7 @@ class EpochLogger(Logger):
             with_min_and_max (bool): If true, log min and max values of the
                 diagnostic over the epoch.
 
-            average_only (bool): If true, do not log the standard deviation
+            average_only (bool): If true, do not log the std. dev. and histogram
                 of the diagnostic over the epoch.
         """
         if val is not None:
@@ -244,20 +257,9 @@ class EpochLogger(Logger):
             vals = self.epoch_dict[key]
             super().log_tabular(key + "/Avg", np.mean(vals))
             if not average_only:
-                self.histogram_dict[key + "/Hist"] = np.array(vals)
+                super().log_histogram(key, np.array(vals))
                 super().log_tabular(key + "/Std", np.std(vals))
             if with_min_and_max:
                 super().log_tabular(key + "/Max", np.max(vals))
                 super().log_tabular(key + "/Min", np.min(vals))
         self.epoch_dict[key] = []
-
-    def dump_tabular(self, global_step):
-        """Write all of the diagnostics from the current iteration.
-
-        Args:
-            global_step (int): Global step value of the diagnostics.
-        """
-        super().dump_tabular(global_step)
-        for key, hist in self.histogram_dict.items():
-            self.aim_run.track_histogram(key, hist, step=global_step)
-        self.histogram_dict.clear()
