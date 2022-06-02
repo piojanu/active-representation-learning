@@ -100,7 +100,6 @@ class _Worker(threading.Thread):
         num_updates,
         preproc_ratio,
         log_interval,
-        save_interval,
         # World params
         local_num_steps,
         my_rank,
@@ -122,7 +121,6 @@ class _Worker(threading.Thread):
         self.temperature = temperature
 
         self.local_log_interval = log_interval * local_num_steps
-        self.local_save_interval = save_interval * local_num_steps
 
         self.local_num_steps = local_num_steps
         self.num_processes = num_processes
@@ -152,8 +150,8 @@ class _Worker(threading.Thread):
             temperature,
         )
 
-        # Save checkpoint at step zero
-        self.save_checkpoint(0)
+        # Checkpoint at step zero
+        self.checkpoint(0)
 
     def increment_counters(self):
         self.episode_steps += 1
@@ -249,6 +247,8 @@ class _Worker(threading.Thread):
                 self.cumulative_losses.append(0.0)
                 self.last_losses.append(loss.item())  # trunk-ignore(flake8/F821)
 
+                # Checkpoint at end of episode (before reset)
+                self.checkpoint(self.total_steps)
                 self.reset()
 
             if self.episode_steps < self.buffer_size:
@@ -302,9 +302,6 @@ class _Worker(threading.Thread):
 
                 self.info_queue.put_nowait(info)
 
-            if self.total_steps % self.local_save_interval == 0:
-                self.save_checkpoint(self.total_steps)
-
     def compute_loss(self, batch):
         x_i, x_j = batch[0], batch[1]
 
@@ -314,7 +311,7 @@ class _Worker(threading.Thread):
 
         return self.criterion(z_i, z_j)
 
-    def save_checkpoint(self, local_step):
+    def checkpoint(self, local_step):
         torch.save(
             [
                 self.model.encoder,
@@ -350,7 +347,6 @@ class TrainSimCLR(gym.Wrapper):
         num_updates,
         preproc_ratio,
         log_interval,
-        save_interval,
     ):
         super().__init__(env)
 
@@ -377,7 +373,6 @@ class TrainSimCLR(gym.Wrapper):
             num_updates=num_updates,
             preproc_ratio=preproc_ratio,
             log_interval=log_interval,
-            save_interval=save_interval,
             local_num_steps=local_num_steps,
             my_rank=my_rank,
             num_processes=num_processes,

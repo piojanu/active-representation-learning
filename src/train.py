@@ -1,5 +1,3 @@
-import os
-import os.path as osp
 import sys
 import time
 
@@ -37,11 +35,6 @@ def main(cfg):
     torch.set_num_threads(2)
 
     device = torch.device("cuda:0" if cfg.training.cuda else "cpu")
-
-    ckpt_dir = "./checkpoints"
-    weights_dir = osp.join(ckpt_dir, "weights")
-    os.makedirs(ckpt_dir)
-    os.makedirs(weights_dir)
 
     local_num_steps = cfg.training.num_steps // cfg.training.num_processes
     env = make_vec_env(
@@ -106,20 +99,18 @@ def main(cfg):
 
     if isinstance(agent, DummyAgent):
         local_agent_log_interval = None
-        local_agent_save_interval = None
     else:
         # Change intervals unit into local steps
-        local_agent_log_interval = cfg.agent.logging.log_interval * local_num_steps
-        local_agent_save_interval = cfg.agent.logging.save_interval * local_num_steps
+        local_agent_log_interval = cfg.agent.logging.interval * local_num_steps
 
     if cfg.encoder.algo.lower() == "dummy":
         local_encoder_log_interval = None
     else:
         # Change intervals unit into local steps
-        local_encoder_log_interval = cfg.encoder.logging.log_interval * local_num_steps
+        local_encoder_log_interval = cfg.encoder.logging.interval * local_num_steps
 
     # Change intervals unit into local steps
-    local_rollout_log_interval = cfg.agent.logging.log_interval * local_num_steps
+    local_rollout_log_interval = cfg.agent.logging.interval * local_num_steps
 
     # Training loop
     local_total_steps = int(cfg.training.total_steps // cfg.training.num_processes)
@@ -199,28 +190,7 @@ def main(cfg):
             logger.store(**info)
 
         # Bookkeeping from here til the end of the training loop
-
         dump_logs = False
-
-        # If it's time to checkpoint agent...
-        if local_agent_save_interval is not None and (
-            (local_step + 1) % local_agent_save_interval == 0
-            or (local_step + 1) == local_total_steps
-        ):
-            torch.save(
-                [
-                    actor_critic,
-                    agent.optimizer.state_dict(),
-                ],
-                osp.join(ckpt_dir, "model.pkl"),
-            )
-            torch.save(
-                actor_critic.state_dict(),
-                osp.join(
-                    weights_dir,
-                    f"{global_step_plus_one // 1000}k.pt",
-                ),
-            )
 
         # If it's time to log encoder...
         if (

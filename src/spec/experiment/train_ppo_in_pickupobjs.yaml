@@ -5,8 +5,7 @@ defaults:
 
 agent:
   logging:
-    log_interval: 10
-    save_interval: 100
+    interval: 10
   loss:
     clip_ratio_pi: 0.1
     clip_ratio_vf: null

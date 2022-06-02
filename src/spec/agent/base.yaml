@@ -1,3 +1,2 @@
 logging:
-  log_interval: 4 # Log every N policy iterations
-  save_interval: 20 # Save every M policy iterations
+  interval: 4 # Log every N policy iterations
