@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import queue
 import threading
+from copy import deepcopy
 from random import randint
 
 import gym
@@ -113,13 +114,7 @@ class _Worker(threading.Thread):
         assert num_updates >= 1
 
         self.buffer_size = buffer_size
-        self.learning_rate = learning_rate
-        self.mini_batch_size = mini_batch_size
         self.num_updates = num_updates
-        self.observation_shape = observation_shape
-        self.projection_dim = projection_dim
-        self.temperature = temperature
-
         self.local_log_interval = log_interval * local_num_steps
 
         self.local_num_steps = local_num_steps
@@ -139,27 +134,6 @@ class _Worker(threading.Thread):
         self.ckpt_dir = osp.join("./checkpoints", f"encoder_{my_rank}")
         os.makedirs(self.ckpt_dir)
 
-        self.initialize_data_set_n_loader(
-            buffer_size, mini_batch_size, observation_shape, preproc_ratio
-        )
-        self.initialize_model_n_optimizer(
-            learning_rate,
-            mini_batch_size,
-            observation_shape,
-            projection_dim,
-            temperature,
-        )
-
-        # Checkpoint at step zero
-        self.checkpoint(0)
-
-    def increment_counters(self):
-        self.episode_steps += 1
-        self.total_steps += 1
-
-    def initialize_data_set_n_loader(
-        self, buffer_size, mini_batch_size, observation_shape, preproc_ratio
-    ):
         # Create SimCLR transformation
         # NOTE: These are non-parametric transforms, so there is nothing to move to GPU
         transforms = torch.nn.Sequential(
@@ -194,14 +168,6 @@ class _Worker(threading.Thread):
             prefetch_factor=mini_batch_size // 2,
         )
 
-    def initialize_model_n_optimizer(
-        self,
-        learning_rate,
-        mini_batch_size,
-        observation_shape,
-        projection_dim,
-        temperature,
-    ):
         # Create SimCLR encoder
         encoder = ShallowResNet5Encoder()
         n_features = encoder(torch.randn(1, *observation_shape)).shape[1]
@@ -217,16 +183,21 @@ class _Worker(threading.Thread):
         # Create Adam optimizer
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
 
+        # Copy the initial model and optimizer state dicts for resetting
+        self.model_init_state = deepcopy(self.model.state_dict())
+        self.optim_init_state = deepcopy(self.optimizer.state_dict())
+
+        # Checkpoint at step zero
+        self.checkpoint(0)
+
+    def increment_counters(self):
+        self.episode_steps += 1
+        self.total_steps += 1
+
     def reset(self):
         self.episode_steps = 0
-        self.initialize_model_n_optimizer(
-            self.learning_rate,
-            self.mini_batch_size,
-            self.observation_shape,
-            self.projection_dim,
-            self.temperature,
-        )
-        # TODO: Should we reset prefetch buffers (e.g. reset `data_iter`) too?
+        self.model.load_state_dict(self.model_init_state)
+        self.optimizer.load_state_dict(self.optim_init_state)
 
     def run(self):
         # Fetch warm-up steps to fill the dataset
