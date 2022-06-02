@@ -195,7 +195,6 @@ def main(cfg):
         # If it's time to log encoder...
         if (
             local_encoder_log_interval is not None
-            and (local_step + 1) >= cfg.encoder.training.buffer_size
             and (local_step + 1) % local_encoder_log_interval == 0
         ):
             dump_logs = True
