@@ -251,12 +251,10 @@ def main(cfg):
             dump_logs = True
 
             # Record the last iteration rollouts
-            # logger.writer.add_video(
-            #     "RolloutsBuffer",
-            #     torch.transpose(rollouts.obs, 0, 1).type(torch.uint8),
-            #     global_step_plus_one,
-            #     fps=15,
-            # )
+            logger.log_video(
+                "RolloutsBuffer",
+                torch.transpose(rollouts.obs, 0, 1).cpu().numpy() / 255.0,
+            )
 
             elapsed_time = time.time() - start_time
             start_time = time.time()

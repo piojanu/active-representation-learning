@@ -1,10 +1,16 @@
 """Some simple logging functionality, inspired by spinup's logging."""
 import re
+import tempfile
 
 import matplotlib.pyplot as plt
 import numpy as np
 from aim import Distribution, Image, Run
-from torch.utils.tensorboard._utils import convert_to_HWC, figure_to_image
+from moviepy import editor as mpy
+from torch.utils.tensorboard._utils import (
+    _prepare_video,
+    convert_to_HWC,
+    figure_to_image,
+)
 
 
 def colorize(string, color, bold=False, highlight=False):
@@ -93,6 +99,17 @@ class AimRun:
         """Track a scalar."""
         self.track(key, scalar, step=step)
 
+    def track_video(self, key, video, step=None):
+        """Track a video."""
+        video = _prepare_video(video)
+        if video.dtype == np.float32:
+            video = (video * 255).astype(np.uint8)
+
+        with tempfile.NamedTemporaryFile(suffix=".gif") as file:
+            clip = mpy.ImageSequenceClip(list(video), fps=15)
+            clip.write_gif(file.name, verbose=False, logger=None)
+            self.track(key, Image(file.name, format="gif"), step=step)
+
 
 class Logger:
     """A general-purpose logger.
@@ -107,6 +124,7 @@ class Logger:
         self.log_current_hist = {}
         self.log_current_img = {}
         self.log_current_row = {}
+        self.log_current_vid = {}
 
     def log_heatmap(self, key, val):
         """Generate a heatmap and log it as an image."""
@@ -154,7 +172,11 @@ class Logger:
     def log_video(self, key, val):
         """Log a video."""
 
-        raise NotImplementedError()
+        assert key not in self.log_current_vid, (
+            "You already set %s this iteration. "
+            "Maybe you forgot to call dump_tabular()" % key
+        )
+        self.log_current_vid[key] = val
 
     def dump_tabular(self, global_step):
         """Write all of the diagnostics from the current iteration.
@@ -167,7 +189,6 @@ class Logger:
         fmt = "| " + keystr + "s | %15s |"
         n_slashes = 22 + max_key_len
 
-        print("-" * n_slashes)
         for key, val in self.log_current_row.items():
             # Write to CMD
             valstr = "%8.3g" % val if hasattr(val, "__float__") else val
@@ -176,16 +197,19 @@ class Logger:
             # Write to Aim
             self.aim_run.track_scalar(key, val, step=global_step)
         print("-" * n_slashes, flush=True)
+        self.log_current_row.clear()
 
         for key, hist in self.log_current_hist.items():
             self.aim_run.track_histogram(key, hist, step=global_step)
+        self.log_current_hist.clear()
 
         for key, img in self.log_current_img.items():
             self.aim_run.track_image(key, img, step=global_step)
-
-        self.log_current_hist.clear()
         self.log_current_img.clear()
-        self.log_current_row.clear()
+
+        for key, vid in self.log_current_vid.items():
+            self.aim_run.track_video(key, vid, step=global_step)
+        self.log_current_vid.clear()
 
 
 class EpochLogger(Logger):
