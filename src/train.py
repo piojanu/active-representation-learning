@@ -206,7 +206,7 @@ def main(cfg):
                         np.mean(info["simclr"]["cumulative_losses"]),
                     )
                     logger.log_tabular(
-                        f"LastLossContrastive/E{idx}",
+                        f"LastValLossContrastive/E{idx}",
                         np.mean(info["simclr"]["last_losses"]),
                     )
 

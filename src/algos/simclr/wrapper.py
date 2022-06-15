@@ -208,6 +208,9 @@ class _Worker(threading.Thread):
         # NOTE: Prefetching starts after you call `iter` on the data loader
         data_iter = iter(self.data_loader)
 
+        # Fetch a batch to be used as the validation data
+        val_batch = next(data_iter)
+
         while True:
             obs_done = self.data_queue.get()
             if obs_done is None:
@@ -216,7 +219,10 @@ class _Worker(threading.Thread):
 
             if done:
                 self.cumulative_losses.append(0.0)
-                self.last_losses.append(loss.item())  # trunk-ignore(flake8/F821)
+                val_loss, _ = self.compute_loss(
+                    val_batch.to(self.device, non_blocking=True)
+                )
+                self.last_losses.append(val_loss.item())
 
                 # Checkpoint at end of episode (before reset)
                 self.checkpoint(self.total_steps)
