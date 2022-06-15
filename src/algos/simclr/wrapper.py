@@ -376,7 +376,7 @@ class TrainSimCLR(gym.Wrapper):
         self.data_queue.put_nowait((obs, done))
 
         if self.total_steps % self.local_num_steps == 0:
-            info["encoder"] = self.info_queue.get()
+            info["simclr"] = self.info_queue.get()
 
         return obs, rew, done, info
 

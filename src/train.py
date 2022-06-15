@@ -135,10 +135,10 @@ def main(cfg):
         # Observe reward and next obs
         obs, reward, done, infos = env.step(action)
         for info in infos:
-            if "encoder" in info.keys():
+            if "simclr" in info.keys():
                 logger.store(
-                    LossEncoder=info["encoder"]["losses"],
-                    EncoderUpdates=info["encoder"]["total_updates"],
+                    LossContrastive=info["simclr"]["losses"],
+                    SimCLRUpdates=info["simclr"]["total_updates"],
                 )
 
         # If done then clean the history of observations
@@ -177,12 +177,12 @@ def main(cfg):
                 # TODO: Refactor it so this logic is hidden and can be disabled
                 mix_rewards=-torch.stack(  # Mix in the negative loss
                     [
-                        torch.tensor(info["encoder"]["losses"], device=device)
+                        torch.tensor(info["simclr"]["losses"], device=device)
                         for info in infos
                     ],
                     dim=1,
                 ).unsqueeze(-1)
-                if "encoder" in infos[0]
+                if "simclr" in infos[0]
                 else None,
             )
 
@@ -199,31 +199,31 @@ def main(cfg):
         ):
             dump_logs = True
 
-            if "cumulative_losses" in infos[0]["encoder"]:
+            if "cumulative_losses" in infos[0]["simclr"]:
                 for idx, info in enumerate(infos):
                     logger.log_tabular(
-                        f"CumulativeLossEncoder/E{idx}",
-                        np.mean(info["encoder"]["cumulative_losses"]),
+                        f"CumulativeLossContrastive/E{idx}",
+                        np.mean(info["simclr"]["cumulative_losses"]),
                     )
                     logger.log_tabular(
-                        f"LastLossEncoder/E{idx}",
-                        np.mean(info["encoder"]["last_losses"]),
+                        f"LastLossContrastive/E{idx}",
+                        np.mean(info["simclr"]["last_losses"]),
                     )
 
-            if "last_batch" in infos[0]["encoder"]:
+            if "last_batch" in infos[0]["simclr"]:
                 for idx, info in enumerate(infos):
                     # Transpose so pairs are next to each other
-                    last_batch = np.swapaxes(info["encoder"]["last_batch"], 0, 1)
+                    last_batch = np.swapaxes(info["simclr"]["last_batch"], 0, 1)
                     # Flatten the pair and batch dimensions
                     last_batch = np.reshape(last_batch, (-1,) + last_batch.shape[2:])
 
                     logger.log_image(f"LastBatch/E{idx}", last_batch)
                     logger.log_heatmap(
-                        f"ConfusionMatrix/E{idx}", info["encoder"]["confusion_matrix"]
+                        f"ConfusionMatrix/E{idx}", info["simclr"]["confusion_matrix"]
                     )
 
-            logger.log_tabular("LossEncoder")
-            logger.log_tabular("EncoderUpdates", average_only=True)
+            logger.log_tabular("LossContrastive")
+            logger.log_tabular("SimCLRUpdates", average_only=True)
 
         # If it's time to log agent...
         if (
