@@ -82,7 +82,9 @@ class LookAtObjs(MiniWorldEnv):
         else:
             raise ValueError("max_angle must be lower or equal 2pi")
 
-        super().__init__(max_episode_steps=3000, **kwargs)
+        # NOTE: The following is a hack to make the logging align with resets.
+        #       3072 = 3 * 2048 (# steps) / 8 (# processes) * 4 (logging interval)
+        super().__init__(max_episode_steps=3072, **kwargs)
 
         # Reduce the action space
         self.action_space = spaces.Discrete(self.actions.turn_right + 1)
