@@ -46,6 +46,7 @@ class AimRun:
             run_hash=cfg._run.run_name,
             log_system_params=True,
         )
+        self.run.add_tag("fleeting")
         self.run["hparams"] = cfg
 
     @staticmethod
